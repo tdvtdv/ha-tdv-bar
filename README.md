@@ -1,28 +1,26 @@
+# ha-tdv-bar
+A Home Assistant lovelace card to display bar chart  oriented to display power sensors
+
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 
-# Toggle Card to HACS
 
-![new repository in HACS](img/title-image.png)
+![Simple example card](img/pic1.png)
 
-Bringing the toggle card to HACS
+## Options
 
-***
+| Name              | Type    | Requirement  | Default             | Description                                 |
+| ----------------- | ------- | ------------ | ------------------- | ------------------------------------------- |
+| type              | string  | **Required** |                     | `custom:tdv-bar-card`
+| title             | string  | **Optional** |                     | Optional header title for the card
+| height            | number  | **Optional** | 200                 | The height of the card in pixels
+| rangemax          | number  | **Optional** | 2000                | Maximum bar scale range
+| entities          | object  | **Required** |                     | Displayed entities. See [Entities](#Entities)
 
-* @published: May 2023
-* @author: Elmar Hinz
-* @name: `toggle-card-to-hacs`
-* @id: `tcth`
+### Entities
 
-You learn:
-
-* how to install HACS in the development environment
-* how to layout the Github repository for a custom HACS card
-* how to use the HACS repository
-
-## Goal
-
-The goal of this tutorial is to bring your card to HACS by preparing a
-repository on Github satisfying the requirements. It will be a custom HACS
-repository. We don't register it as a default repository to not pollute it with
-myriads of toggle cards.
-
+| Name              | Type    | Requirement  | Default             | Description                                 |
+| ----------------- | ------- | ------------ | ------------------- | ------------------------------------------- |
+| entity            | string  | **Required** |                     | Entity id of the sensor
+| icon              | string  | **Optional** |                     | Icon for this entity
+| name              | string  | **Optional** |                     | Custom label for this entity
+| state             | string  | **Optional** |                     | Change state entity id (e.g. switch)
