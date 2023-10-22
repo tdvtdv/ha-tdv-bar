@@ -1,6 +1,6 @@
 {
-    "name": "Toggle card to hacs",
+    "name": "Card to display bar chart oriented to display power sensors",
     "render_readme": true,
-    "filename": "card.js",
+    "filename": "tdvbarcard.js",
     "content_in_root": true
   }
