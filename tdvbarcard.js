@@ -1,4 +1,4 @@
-console.info("%c v0.0.1 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v0.0.2 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 class TDVBarCard extends HTMLElement
  {
@@ -45,7 +45,7 @@ class TDVBarCard extends HTMLElement
        {
         // Create full the object copy for prevent use preview configuration
         this.config=JSON.parse(JSON.stringify(this.config));
-//debugger        
+
         this.config.title=null;
         this.config.entities=[];
         for(let i in this._hass.states)
@@ -65,7 +65,8 @@ class TDVBarCard extends HTMLElement
        {
         // Prepare entity array
         let a=Array.isArray(this.config.entities)?this.config.entities:[this.config.entities];
-        for(let i in a) this.barData.push({ut:a[i].name??"",t:"",m:"",e:a[i].entity,i:a[i].icon,d:0,h:null,st:a[i].state??null});  //ut-пользовательское название e-entity i-icon d-cur.data h-hist.data st-entity on/off
+        for(let i in a) this.barData.push({ut:a[i].name??"",t:"",m:"",e:a[i].entity,i:a[i].icon,d:0,h:null,st:a[i].state??null,bar_fg:a[i].barcolor??null});  
+        //ut-user name e-entity i-icon d-cur.data h-hist.data st-entity on/off bar_fg-individual bar color 
        }
       //-------------------------------------------------------------------------------------------
       // Define metrics
@@ -85,7 +86,12 @@ class TDVBarCard extends HTMLElement
       this.maxpos=this.config.rangemax>0?this.config.rangemax:2000; 
       // Convert range value to log10 scale
       this.maxposraw=this.maxpos;
-      this.maxpos=Math.log10(this.maxpos);
+
+      switch(this.config.scaletype?this.config.scaletype.toLowerCase():"log10")
+       {
+        case "linear": break;
+        case "log10": this.maxpos=Math.log10(this.maxpos);break;
+       } 
       //-------------------------------------------------------------------------------------------
       // Create card content
       let cnthtml=`<ha-card header="${this.config.title??''}" style="line-height:0;"><div style="position:relative;">`
@@ -276,13 +282,24 @@ class TDVBarCard extends HTMLElement
 //#################################################################################################
   _getPos(v,width)
    {
-   let pc=this.maxpos/width;
-    if(v>0)
+    let pc=this.maxpos/width;
+    switch(this.config.scaletype?this.config.scaletype.toLowerCase():"log10")
      {
-      let a=Math.log10(v)/pc;
-      return Math.round(a);
+      case "linear":
+       {
+        let a=v/pc;
+        return Math.min(Math.round(a),width);
+       } break;
+      case "log10":
+       {
+        if(v>0)
+         {
+          let a=Math.log10(v)/pc;
+          return Math.min(Math.round(a),width);
+         }
+        else return 0;
+       } break;
      }
-    else return 0;
    }
 //#################################################################################################
   _rgbToHsl(color)
@@ -371,7 +388,7 @@ class TDVBarCard extends HTMLElement
     this.ctx.fillText(entity.t,bar_x,y+3,(width-bar_x+.5)-valstrwidth);
 
     // Actual bar data
-    this.ctx.fillStyle=this.colors.bar_fg;
+    this.ctx.fillStyle=entity.bar_fg?entity.bar_fg:this.colors.bar_fg;
     if(entity.d>0) this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(entity.d,width-bar_x-1),height-bar_yoffset-.5,3,true,true);
 
     // Draw grid block
