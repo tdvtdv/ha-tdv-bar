@@ -4,7 +4,7 @@ A Home Assistant lovelace card to display bar chart  oriented to display power s
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 
 
-![Simple example card](img/main-image.png)
+![Simple example card](https://github.com/tdvtdv/ha-tdv-bar/raw/main/img/main-image.png)
 
 ## Options
 
