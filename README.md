@@ -1,8 +1,8 @@
 # ha-tdv-bar
 A Home Assistant lovelace card to display bar chart  oriented to display power sensors
 
+![Simple example card](https://github.com/tdvtdv/ha-tdv-bar/assets/46950849/6ca1f397-a369-420f-849e-0e6faf4ccfb2)
 
-![Simple example card](https://github.com/tdvtdv/ha-tdv-bar/raw/main/img/main-image.png)
 
 ## Options
 
