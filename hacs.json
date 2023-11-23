@@ -1,6 +1,6 @@
 {
     "name": "Card to display bar chart oriented to display power sensors",
     "render_readme": true,
-    "filename": "tdvbarcard.js",
+    "filename": "ha-tdv-bar.js",
     "content_in_root": true
   }
