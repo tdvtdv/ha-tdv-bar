@@ -27,8 +27,8 @@ class TDVBarCard extends HTMLElement
     // Initialize the content if it's not there yet.
     if(!this.canvas)
      {
-      this.GroupBySec=600; //10 minits
-      this.MaxHistStep=(24*60*60)/this.GroupBySec; 
+      this._msecperday=86400000;// msec per day
+      this._scale=this._msecperday/146;
 
       //-------------------------------------------------------------------------------------------
       // Define color constant
@@ -213,47 +213,82 @@ class TDVBarCard extends HTMLElement
     return event;
    }
 //#################################################################################################
+  _BuildDataArray(RawData,Start,Finish)
+   {
+    let GetPosFunc=(a,i)=>{return Math.trunc(new Date(a[i].last_changed).getTime()/this._scale);}
+    let rawmax=GetPosFunc(RawData,RawData.length-1);
+    let res=[];
+    let last=null;
+    let valmin=null;
+    let valmax=null;
+    let valavg=null;
+    let valcount=0;
+    let idx=null;
+  
+    for(let r=0,i=Start;i<=Finish;i++)
+     {
+      if(i<=rawmax)
+       {
+        if(GetPosFunc(RawData,r)<=i)
+         {
+          for(;r<RawData.length&&GetPosFunc(RawData,r)<=i;r++)
+           {
+            if(isNaN(RawData[r].state)) last=null; else last=+RawData[r].state;
+            if(last!=null) 
+             {
+              if(valavg!=null) valavg+=last; else valavg=last;
+              valcount++;
+              if(valmin!=null) valmin=Math.min(valmin,last); else valmin=last;
+              if(valmax!=null) valmax=Math.max(valmax,last); else valmax=last;
+             }
+           }
+         }
+        else
+         {
+          if(last!=null) {valavg=last;valcount++;}
+          if(valmin!=null) valmin=Math.min(valmin,last); else valmin=last;
+          if(valmax!=null) valmax=Math.max(valmax,last); else valmax=last;
+         }
+       }
+      else
+       {
+        //last=null;
+        if(last!=null) {valavg=last;valcount++;}
+        if(valmin!=null) valmin=Math.min(valmin,last); else valmin=last;
+        if(valmax!=null) valmax=Math.max(valmax,last); else valmax=last;
+       } 
+      res[i-Start]={/*k:i,*/v:valcount?valavg/valcount:null,mx:valmax,mn:valmin};
+      valcount=0;
+      valmin=null;
+      valmax=null;
+      valavg=null;
+     }
+    return res;
+   }
+//#################################################################################################
   static async _reqHistEntityData(This,baridx)
    {
     if(baridx==0)
      {
-      let curdate=This._roundDate(new Date());
-      This.CurMoment=curdate.getTime();///1000;
-      This.StartMoment=This.CurMoment-(24*60*60*1000);// one day
+      let curdate=new Date();//This._roundDate(new Date());
+      This.CurMoment=Math.trunc(curdate.getTime()/This._scale);///1000;
+      This.StartMoment=Math.trunc((curdate.getTime()-(This._msecperday))/This._scale);//This.CurMoment-(24*60*60*1000);// one day
+
+      This.ReqStart=new Date(curdate-This._msecperday);
+      This.ReqEnd=curdate;
+
+//console.log("start:",This.ReqStart);
+//console.log("end:",This.ReqEnd);
+
      }
-    let data_raw=await This._fetchRecent(This.barData[baridx].e,null,null,false,false);
+    //let data_raw=await This._fetchRecent(This.barData[baridx].e,null,null,false,false);
+    let data_raw=await This._fetchRecent(This.barData[baridx].e,This.ReqStart,This.ReqEnd,false,false);
     if(data_raw&&data_raw.length&&data_raw[0]&&data_raw[0].length)
      {
-      let data=data_raw[0];
-      This.barData[baridx].h=[]; // Reset history array
 
-      let latestval=null;
-      let pervidx=null;
-      for(let i in data)
-       {
-        let d=Math.trunc(new Date(data[i].last_changed).getTime());
-        if(d>=This.StartMoment)
-         {
-          // calculate date index for array
-          let rd=This._roundDate(new Date(d))
-          let idx=(This.CurMoment-rd)/(This.GroupBySec*1000);
-          // fill skipped array element
-          if(pervidx!=null&&(pervidx+1)>idx)
-           {
-            for(;pervidx>idx;pervidx--)
-             {
-              if(!isNaN(latestval)) This.barData[baridx].h[pervidx]=Math.max(latestval,This.barData[baridx].h[pervidx]??0);
-             }  
-           }
-          if(!isNaN(data[i].state)) This.barData[baridx].h[idx]=Math.max(data[i].state,This.barData[baridx].h[idx]??0);
-          pervidx=idx;
-         }
-        latestval=data[i].state;
-       }
-      for(;pervidx>=0;pervidx--)
-       {
-        if(!isNaN(latestval)) This.barData[baridx].h[pervidx]=Math.max(latestval,This.barData[baridx].h[pervidx]??0);
-       }  
+      This.barData[baridx].h=This._BuildDataArray(data_raw[0],This.StartMoment,This.CurMoment);
+
+
      }
     baridx++;
     if(baridx<This.barData.length)
@@ -292,7 +327,7 @@ class TDVBarCard extends HTMLElement
        } break;
       case "log10":
        {
-        if(v>0)
+        if(v>=1)
          {
           let a=Math.log10(v)/pc;
           return Math.min(Math.round(a),width);
@@ -367,7 +402,7 @@ class TDVBarCard extends HTMLElement
 
     this._roundRect(bar_x,y+bar_yoffset,width-bar_x+.5, height-bar_yoffset+.5,3,true,true);
     this.ctx.fillStyle=this.colors.card_bg;//this.colors.chart_bg
-    this._roundRect(chart_x,y,this.metric.chartwidth,height+.5,0,true,true);
+    this._roundRect(chart_x,y,this.metric.chartwidth+2,height+.5,0,true,true);
 
     // Text block
     this.ctx.fillStyle=this.colors.name;
@@ -407,19 +442,36 @@ class TDVBarCard extends HTMLElement
     //Draw chart
     if(entity.h&&entity.h.length)
      {
-      this.ctx.strokeStyle=this.colors.chart_fg;
+      this.ctx.strokeStyle=this.colors.chart_fghalf;
       this.ctx.beginPath();
       for(let i=0;i<entity.h.length;i++)
        {
-        if(entity.h[i])
+        if(entity.h[i]&&entity.h[i].mx)
          {
-          let a=this._getPos(entity.h[i],height-2);
-
-          this.ctx.moveTo((chart_x+this.metric.chartwidth)-i-1,y+height);
-          this.ctx.lineTo((chart_x+this.metric.chartwidth)-i-1,(y+height-a));
+          let a=this._getPos(entity.h[i].mx,height-2);
+          this.ctx.moveTo(chart_x+i+1,y+height);
+          this.ctx.lineTo(chart_x+i+1,(y+height-a));
          }
        }
       this.ctx.stroke();
+
+      this.ctx.strokeStyle=this.colors.chart_fg;
+//      this.ctx.fillStyle=this.colors.chart_fg;
+      this.ctx.beginPath();
+      for(let i=0;i<entity.h.length;i++)
+       {
+        if(entity.h[i]&&entity.h[i].v)
+         {
+          let a=this._getPos(entity.h[i].v,height-2);
+          this.ctx.moveTo(chart_x+i+1,y+height);
+          this.ctx.lineTo(chart_x+i+1,(y+height-a));
+//          this.ctx.fillRect(chart_x+i+1-.5,(y+height-a),1,1);
+         }
+       }
+      this.ctx.stroke();
+
+
+
      }
 /*
     //Chart grid
@@ -457,27 +509,30 @@ class TDVBarCard extends HTMLElement
 //#################################################################################################
   _rebuildColorValue()
    {
+    let hsl;
     let isDarkMode=this._hass.themes.darkMode;
     this.colors={}
-    this.colors.card_bg=   this._compStyle.getPropertyValue("--mdc-theme-surface");
-    this.colors.bar_frame= this._compStyle.getPropertyValue("--divider-color");
-    this.colors.bar_fg=    this._compStyle.getPropertyValue("--mdc-theme-primary");
-    this.colors.chart_fg=  this._compStyle.getPropertyValue("--mdc-theme-secondary");
-    this.colors.bar_grid=  isDarkMode?"rgba(255,255,255,0.2)":"rgba(0,0,0,0.2)";
-    this.colors.iconoff=   this._compStyle.getPropertyValue("--mdc-theme-text-icon-on-background");
-    this.colors.iconon=    this._compStyle.getPropertyValue("--mdc-theme-secondary");
-    this.colors.name=      this._compStyle.getPropertyValue("--primary-text-color"); 
-    let hsl=this._rgbToHsl(this.colors.bar_fg);
-    this.colors.bar_bg=    this._hslToRgb(hsl[0],hsl[1],hsl[2]-.35);
+    this.colors.card_bg=     this._compStyle.getPropertyValue("--mdc-theme-surface");
+    this.colors.bar_frame=   this._compStyle.getPropertyValue("--divider-color");
+    this.colors.bar_fg=      this._compStyle.getPropertyValue("--mdc-theme-primary");
+    this.colors.chart_fg=    this._compStyle.getPropertyValue("--mdc-theme-secondary");
     hsl=this._rgbToHsl(this.colors.chart_fg);
-    this.colors.chart_bg=  this._hslToRgb(hsl[0],hsl[1],hsl[2]-.35);
+    this.colors.chart_fghalf=this._hslToRgb(hsl[0],hsl[1],isDarkMode?hsl[2]-.25:hsl[2]+.25);
+    this.colors.bar_grid=  isDarkMode?"rgba(255,255,255,0.2)":"rgba(0,0,0,0.2)";
+    this.colors.iconoff=     this._compStyle.getPropertyValue("--mdc-theme-text-icon-on-background");
+    this.colors.iconon=      this._compStyle.getPropertyValue("--mdc-theme-secondary");
+    this.colors.name=        this._compStyle.getPropertyValue("--primary-text-color"); 
+    hsl=this._rgbToHsl(this.colors.bar_fg);
+    this.colors.bar_bg=      this._hslToRgb(hsl[0],hsl[1],hsl[2]-.35);
+    hsl=this._rgbToHsl(this.colors.chart_fg);
+    this.colors.chart_bg=    this._hslToRgb(hsl[0],hsl[1],hsl[2]-.35);
    }
 //#################################################################################################
-  _roundDate(date)
-   {
-    let coeff=1000*this.GroupBySec;
-    return new Date(Math.floor(date.getTime() / coeff) * coeff);
-   }
+//  _roundDate(date)
+//   {
+//    let coeff=1000*this.GroupBySec;
+//    return new Date(Math.floor(date.getTime() / coeff) * coeff);
+//   }
 //#################################################################################################
   _roundRect(x, y, width, height, radius, fill, stroke)
    {
