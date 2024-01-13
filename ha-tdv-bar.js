@@ -82,6 +82,7 @@ class TDVBarCard extends HTMLElement
       // Calc bar height
       if(this.barData.length) this.metric.bar_h=(this.size_h-this.metric.padding)/this.barData.length;
       //-------------------------------------------------------------------------------------------
+      this.histmode=this.config.histmode??1;  //0-hide 1-normal
       // Range
       this.maxpos=this.config.rangemax>0?this.config.rangemax:2000; 
       // Convert range value to log10 scale
@@ -166,7 +167,7 @@ class TDVBarCard extends HTMLElement
       // if some bar defined start history data requester timer
       if(this.barData.length)
        {
-        setTimeout(TDVBarCard._reqHistEntityData,100,this,0);
+        if(this.histmode>0) setTimeout(TDVBarCard._reqHistEntityData,100,this,0);
        }
      }
     //----------------------------------
@@ -390,7 +391,9 @@ class TDVBarCard extends HTMLElement
 //#################################################################################################
   _drawBarItem(x, y, width, height,entity)
    {
-    let bar_x=x+this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2;
+    let bar_x;
+    if(this.histmode>0) bar_x=x+this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2;
+    else bar_x=x+this.metric.iconwidth+this.metric.padding;
 //console.log(">>>>>>>>>>>>>>>>>>>>>>>>>",this.fonts.name,this.metric.nameheight)
 
     let bar_yoffset=this.metric.nameheight;//Math.trunc(height/2);
@@ -402,7 +405,7 @@ class TDVBarCard extends HTMLElement
 
     this._roundRect(bar_x,y+bar_yoffset,width-bar_x+.5, height-bar_yoffset+.5,3,true,true);
     this.ctx.fillStyle=this.colors.card_bg;//this.colors.chart_bg
-    this._roundRect(chart_x,y,this.metric.chartwidth+2,height+.5,0,true,true);
+    if(this.histmode>0) this._roundRect(chart_x,y,this.metric.chartwidth+2,height+.5,0,true,true);
 
     // Text block
     this.ctx.fillStyle=this.colors.name;
@@ -440,7 +443,7 @@ class TDVBarCard extends HTMLElement
     this.ctx.stroke();
 
     //Draw chart
-    if(entity.h&&entity.h.length)
+    if(this.histmode>0&&entity.h&&entity.h.length)
      {
       this.ctx.strokeStyle=this.colors.chart_fghalf;
       this.ctx.beginPath();
@@ -469,26 +472,8 @@ class TDVBarCard extends HTMLElement
          }
        }
       this.ctx.stroke();
-
-
-
      }
-/*
-    //Chart grid
-    this.ctx.beginPath();
-    this.ctx.strokeStyle=this.colors.bar_grid;
-//    gridstep=this.maxposraw/3;
-    let pa=null;
-    for(let s=gridstep;s<this.maxposraw;s+=gridstep*2)
-     {
-      let a=this._getPos(s,height-2);
-      if(a==pa) break;
-      this.ctx.moveTo(chart_x,(y+height-1-a)+.5);
-      this.ctx.lineTo(chart_x+this.metric.chartwidth,(y+height-1-a)+.5);
-      pa=a;
-     }
-    this.ctx.stroke();
-*/
+
    }
 //#################################################################################################
   _drawBarContent()
