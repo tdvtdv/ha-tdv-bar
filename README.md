@@ -15,9 +15,9 @@ A Home Assistant lovelace card to display bar chart  oriented to display power s
 | title             | string  | **Optional** |                     | Optional header title for the card
 | height            | number  | **Optional** |                     | The height of the card in pixels
 | rangemax          | number  | **Optional** | 2000                | Maximum bar scale range
-| histmode          | number  | **Optional** | 1                   | Historical chart display mode
-|                   |         |              |                     |   0-hide 
-|                   |         |              |                     |   1-show 
+| histmode          | number  | **Optional** | 1                   | Historical chart display mode<br>0-hide<br>1-show
+| trackingmode      | number  | **Optional** | 1                   | Mouse tracking mode<br>0-disable<br>1-bar only<br>2-history<br>3-bar and history
+| trackingvalue     | string  | **Optional** | max                 | Type of value to be tracked (min, avg, max)
 | scaletype         | string  | **Optional** | log10               | Scale type (linear or log10 )
 | entities          | object  | **Required** |                     | Displayed entities. See [Entities](#Entities)
 
@@ -40,6 +40,8 @@ title: Energy consumers
 scaletype: log10
 rangemax: 2500
 histmode: 1
+trackingmode: 1
+trackingvalue: max
 entities:
   - entity: sensor.energomonitor_power
     icon: mdi:power-standby

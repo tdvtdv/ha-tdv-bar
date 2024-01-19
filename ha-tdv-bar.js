@@ -1,4 +1,10 @@
-console.info("%c v0.0.2 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.1.0 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+
+const LitElement = customElements.get("ha-panel-lovelace") ? Object.getPrototypeOf(customElements.get("ha-panel-lovelace")) : Object.getPrototypeOf(customElements.get("hc-lovelace"));
+const html = LitElement.prototype.html;
+const css = LitElement.prototype.css;
+//, customElement, property, CSSResult, TemplateResult, PropertyValues
+
 
 class TDVBarCard extends HTMLElement
  {
@@ -27,6 +33,8 @@ class TDVBarCard extends HTMLElement
     // Initialize the content if it's not there yet.
     if(!this.canvas)
      {
+      this._tracker={};
+      this._broadcast=new BroadcastChannel("tdv-bar");
       this._msecperday=86400000;// msec per day
       this._scale=this._msecperday/146;
 
@@ -70,7 +78,7 @@ class TDVBarCard extends HTMLElement
        }
       //-------------------------------------------------------------------------------------------
       // Define metrics
-      this.metric={}
+      this.metric={hist_offset:null,data:null,bar_id:null}
       this.metric.padding=10;
       this.metric.iconsize=parseInt(this._compStyle.getPropertyValue("--paper-font-headline_-_font-size"));//24;//  style.getPropertyValue("--mdc-icon-size");
       this.metric.iconwidth=this.metric.iconsize;
@@ -82,7 +90,9 @@ class TDVBarCard extends HTMLElement
       // Calc bar height
       if(this.barData.length) this.metric.bar_h=(this.size_h-this.metric.padding)/this.barData.length;
       //-------------------------------------------------------------------------------------------
-      this.histmode=this.config.histmode??1;  //0-hide 1-normal
+      this.histmode=this.config.histmode??1;         //0-hide 1-normal
+      this.trackingmode=Number(this.config.trackingmode??1); //0-disable 1-bar only 2-history 3-bar and history
+      this.trackingvalue=this.config.trackingvalue??"max";   //min, avg, max
       // Range
       this.maxpos=this.config.rangemax>0?this.config.rangemax:2000; 
       // Convert range value to log10 scale
@@ -151,6 +161,66 @@ class TDVBarCard extends HTMLElement
            }
          }
        });
+      //-------------------------------
+      this.canvas.addEventListener("mouseleave",(ev)=>
+       {
+        this._tracker.bar_id=null;
+        this._tracker.hist_offset=null;
+        this._tracker.data=null;
+        this._drawBarContent();
+        this._broadcast.postMessage({hist_offset:null,data:null,bar_id:null});
+       });
+      //-------------------------------
+      this.canvas.addEventListener("mousemove",(ev)=>
+       {
+        let bar_id=null;
+        let hist_offset=null;
+        let data=null;
+        let mx,my;
+        if(ev.offsetX||ev.offsetY){mx=ev.offsetX;my=ev.offsetY;} else {mx=ev.layerX;my=ev.layerY;} 
+        if(my>=this.metric.padding)
+         {
+          let i=Math.trunc((my-this.metric.padding)/this.metric.bar_h);
+          let b_y0=this.metric.padding+this.metric.bar_h*i;
+          let b_y1=b_y0+this.metric.bar_h-this.metric.padding;
+          if(my>=b_y0&&my<b_y1&&mx>=this.metric.padding&&mx<=(this.size_w-this.metric.padding))
+           {
+            bar_id=i;
+            let lx=mx-this.metric.padding;
+            let ly=Math.round(my-b_y0);
+
+            if(this.histmode>0&&lx>(this.metric.iconwidth+this.metric.padding)&&lx<(this.metric.iconwidth+this.metric.padding+this.metric.chartwidth+1))
+             {
+              hist_offset=lx-(this.metric.iconwidth+this.metric.padding+1);
+              if(i>=0&&i<this.barData.length&&this.barData[i]&&this.barData[i].h)
+               {
+                switch(this.trackingvalue)
+                 {
+                  case "min": data=this.barData[i].h[hist_offset].mn;break
+                  case "avg": data=this.barData[i].h[hist_offset].v;break
+                  case "max": 
+                  default:    data=this.barData[i].h[hist_offset].mx;break
+                 } 
+               }
+              //data=Math.pow(10,ly)
+              //console.log("mouse move:",lx,ly,bar_id,hist_offset,data);
+
+             }
+           }
+         }
+        if(this.trackingmode==2||this.trackingmode==3) this._broadcast.postMessage({hist_offset,data,bar_id});
+        this._tracker.hist_offset=hist_offset;
+        this._tracker.data=data;
+        this._tracker.bar_id=bar_id;
+        this._drawBarContent();
+       });
+      //-------------------------------
+      this._broadcast.onmessage=(event)=>
+       {
+        //console.log(event.data);
+        this._tracker.hist_offset=event.data.hist_offset
+        this._drawBarContent();
+       };
       //-------------------------------
       new ResizeObserver(()=>
        {
@@ -338,13 +408,17 @@ class TDVBarCard extends HTMLElement
      }
    }
 //#################################################################################################
-  _rgbToHsl(color)
+  _rgbval(color)
    {
     let hex=color.replace(/^\s*#|\s*$/g,''); // strip the leading # if it's there
     if(hex.length==3) hex=hex.replace(/(.)/g, '$1$1');  // convert 3 char codes --> 6, e.g. `E0F` --> `EE00FF`
-    let r=parseInt(hex.substr(0,2),16)/255,
-        g=parseInt(hex.substr(2,2),16)/255,
-        b=parseInt(hex.substr(4,2),16)/255;
+    return [parseInt(hex.substr(0,2),16),parseInt(hex.substr(2,2),16),parseInt(hex.substr(4,2),16)];
+   }
+//#################################################################################################
+  _rgbToHsl(color)
+   {
+    let hex=this._rgbval(color);
+    let r=hex[0]/255,g=hex[1]/255,b=hex[2]/255;
   
     let max = Math.max(r, g, b), min = Math.min(r, g, b);
     let h,s,l=(max+min)/2;
@@ -389,7 +463,7 @@ class TDVBarCard extends HTMLElement
     return `#${Number(Math.round(r*255)).toString(16).padStart(2, '0')}${Number(Math.round(g*255)).toString(16).padStart(2, '0')}${Number(Math.round(b*255)).toString(16).padStart(2, '0')}`
    }
 //#################################################################################################
-  _drawBarItem(x, y, width, height,entity)
+  _drawBarItem(x, y, width, height,entity,baridx)
    {
     let bar_x;
     if(this.histmode>0) bar_x=x+this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2;
@@ -408,26 +482,57 @@ class TDVBarCard extends HTMLElement
     if(this.histmode>0) this._roundRect(chart_x,y,this.metric.chartwidth+2,height+.5,0,true,true);
 
     // Text block
-    this.ctx.fillStyle=this.colors.name;
     this.ctx.textBaseline="top";//"middle"; 
     this.ctx.font=this.fonts.name;//"14px Roboto, Noto, sans-serif "//
     // Value
     let valstrwidth=0;
+    let tvalstrwidth=0;
     if(Number(entity.d)>0)
      {
       // Form a string with the current value
       let curvalstr=entity.d+" "+entity.m;
-      valstrwidth=this.ctx.measureText(curvalstr).width+this.metric.padding;
+      valstrwidth=this.ctx.measureText(curvalstr).width;
+      this.ctx.fillStyle=this.colors.name;
       this.ctx.textAlign="end"; 
       this.ctx.fillText(curvalstr,width+.5,y+3);
      }
+    // Tracked value
+    if(this._tracker.data!=null&&this._tracker.data>0&&this._tracker.bar_id!=null&&this._tracker.bar_id==baridx&&(this.trackingmode==1||this.trackingmode==3))
+     {
+      let curvalstr="";
+      switch(this.trackingvalue)
+       {
+        case "min": curvalstr="⇓ ";break;
+        case "avg": curvalstr="~ ";break;
+        case "max":
+        default:    curvalstr="⇑ ";break;
+       }  
+
+      curvalstr+=Number(this._tracker.data).toFixed(1)+" "+entity.m+" / ";
+      tvalstrwidth=this.ctx.measureText(curvalstr).width;
+      this.ctx.fillStyle=this.colors.chart_fg;
+      this.ctx.textAlign="end"; 
+      this.ctx.fillText(curvalstr,width+.5-valstrwidth,y+3);
+     }
+
+
     // Name
+    this.ctx.fillStyle=this.colors.name;
     this.ctx.textAlign="start"; 
-    this.ctx.fillText(entity.t,bar_x,y+3,(width-bar_x+.5)-valstrwidth);
+    this.ctx.fillText(entity.t,bar_x,y+3,(width-bar_x+.5)-(valstrwidth+tvalstrwidth+this.metric.padding));
 
     // Actual bar data
-    this.ctx.fillStyle=entity.bar_fg?entity.bar_fg:this.colors.bar_fg;
-    if(entity.d>0) this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(entity.d,width-bar_x-1),height-bar_yoffset-.5,3,true,true);
+    if(entity.d>0)
+     {
+      this.ctx.fillStyle=entity.bar_fg?entity.bar_fg:this.colors.bar_fg;
+      this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(entity.d,width-bar_x-1),height-bar_yoffset-.5,3,true,true);
+     }
+    // Tracked bar data
+    if(this._tracker.data!=null&&this._tracker.data>0&&this._tracker.bar_id!=null&&this._tracker.bar_id==baridx&&(this.trackingmode==1||this.trackingmode==3))
+     {
+      this.ctx.fillStyle=this.colors.bar_tracker;
+      this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(this._tracker.data,width-bar_x-1),height-bar_yoffset-.5,3,true,true);
+     }
 
     // Draw grid block
     this.ctx.strokeStyle=this.colors.bar_grid;
@@ -487,8 +592,20 @@ class TDVBarCard extends HTMLElement
     for(let e in this.barData)
      {
       let r_y=Math.round(y);   
-      this._drawBarItem(this.metric.padding+.5,r_y+.5,this.size_w-(this.metric.padding+1),Math.round(this.metric.bar_h)-(this.metric.padding+.5),this.barData[e]);
+      this._drawBarItem(this.metric.padding+.5,r_y+.5,this.size_w-(this.metric.padding+1),Math.round(this.metric.bar_h)-(this.metric.padding+.5),this.barData[e],e);
       y+=this.metric.bar_h;
+     }
+    if(this.histmode>0&&this._tracker.hist_offset!=null&&(this.trackingmode==2||this.trackingmode==3))
+     {
+      this.ctx.lineWidth=1;
+      this.ctx.setLineDash([2,2]);
+      this.ctx.strokeStyle=this.colors.tracker1;
+      
+      this.ctx.beginPath();
+      this.ctx.moveTo(this.metric.iconwidth+this.metric.padding*2+.5+this._tracker.hist_offset+1,this.metric.padding);        
+      this.ctx.lineTo(this.metric.iconwidth+this.metric.padding*2+.5+this._tracker.hist_offset+1,this.size_h-this.metric.padding);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
      }
    }
 //#################################################################################################
@@ -500,10 +617,15 @@ class TDVBarCard extends HTMLElement
     this.colors.card_bg=     this._compStyle.getPropertyValue("--mdc-theme-surface");
     this.colors.bar_frame=   this._compStyle.getPropertyValue("--divider-color");
     this.colors.bar_fg=      this._compStyle.getPropertyValue("--mdc-theme-primary");
+
+    hsl=this._rgbval(this._compStyle.getPropertyValue("--mdc-theme-secondary"));
+    this.colors.bar_tracker= `rgba(${hsl[0]},${hsl[1]},${hsl[2]},.5)`;
+
     this.colors.chart_fg=    this._compStyle.getPropertyValue("--mdc-theme-secondary");
     hsl=this._rgbToHsl(this.colors.chart_fg);
     this.colors.chart_fghalf=this._hslToRgb(hsl[0],hsl[1],isDarkMode?hsl[2]-.25:hsl[2]+.25);
     this.colors.bar_grid=  isDarkMode?"rgba(255,255,255,0.2)":"rgba(0,0,0,0.2)";
+    this.colors.tracker1=    this._compStyle.getPropertyValue("--mdc-theme-primary");
     this.colors.iconoff=     this._compStyle.getPropertyValue("--mdc-theme-text-icon-on-background");
     this.colors.iconon=      this._compStyle.getPropertyValue("--mdc-theme-secondary");
     this.colors.name=        this._compStyle.getPropertyValue("--primary-text-color"); 
@@ -555,10 +677,44 @@ class TDVBarCard extends HTMLElement
                        state: "<enter switch entity name>"}] 
            }
    }
+
+  //static getConfigElement() {return document.createElement("tdv-bar-editor");}
  }
 
 customElements.define("tdv-bar-card", TDVBarCard);
+//#################################################################################################
+//######################################## Editor #################################################
+//#################################################################################################
+/*
+class TDVBarCardEditor extends LitElement 
+ {
+  setConfig(config) {this._config = config;}
 
+  //configChanged(newConfig)
+  // {
+  //  const event = new Event("config-changed", {bubbles: true,composed: true,});
+  //  event.detail = { config: newConfig };
+  //  this.dispatchEvent(event);
+  // }
+  render()
+   {
+    return html`
+     <div class="root card-config">
+      <h3>Card elements</h3>
+      <ha-textfield
+                .label=${"Card title"}
+                .placeholder=''
+                .value=${this._config.title || ""}
+                .configValue=${"title"}
+      </ha-textfield>
+     </div>
+    `
+//                @input=${this.update_field}>
+   }
+ }
+customElements.define("tdv-bar-editor", TDVBarCardEditor);
+*/
+//#################################################################################################
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "tdv-bar-card",
