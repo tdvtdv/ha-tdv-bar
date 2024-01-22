@@ -4,7 +4,7 @@ A Home Assistant lovelace card to display bar chart  oriented to display power s
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 
 
-![Simple example card](img/main-image.png)
+![Simple example card](img/main-image_d.png) ![Simple example card](img/main-image_w.png)
 
 
 ## Installation
@@ -54,6 +54,9 @@ Install via HACS
 | name              | string  | **Optional** |                      | Custom label for this entity
 | state             | string  | **Optional** |                      | Change state entity id (e.g. switch)
 | barcolor          | string  | **Optional** | Prymary system color | Individual bar color
+
+
+![Video example](img/vid.gif)
 
 
 ### Example
