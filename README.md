@@ -9,13 +9,6 @@ A Home Assistant lovelace card to display bar chart  oriented to display power s
 
 ## Installation
 
-Download and install the plugin like any other custom resource in Home Assistant.
-
-<a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=tdvtdv&repository=ha-tdv-bar&category=plugin" target="_blank" rel="noreferrer noopener"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open your Home Assistant instance and open a repository inside the Home Assistant Community Store." /></a>
-
-
-## Installation
-
 For installation you should have [HACS](https://hacs.xyz/docs/setup/download/) installed. Then add this repository https://github.com/tdvtdv/ha-tdv-bar in HACS and install the card. You have to reload you browser after installation.
 
 Then you can add the new card into your dashboard.
