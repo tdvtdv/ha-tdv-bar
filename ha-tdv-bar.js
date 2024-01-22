@@ -1,4 +1,4 @@
-console.info("%c v1.1.0 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.1.1 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 const LitElement = customElements.get("ha-panel-lovelace") ? Object.getPrototypeOf(customElements.get("ha-panel-lovelace")) : Object.getPrototypeOf(customElements.get("hc-lovelace"));
 const html = LitElement.prototype.html;
@@ -33,6 +33,8 @@ class TDVBarCard extends HTMLElement
     // Initialize the content if it's not there yet.
     if(!this.canvas)
      {
+      this._anTimerId=null;  //Animation timer id 
+
       this._tracker={};
       this._broadcast=new BroadcastChannel("tdv-bar");
       this._msecperday=86400000;// msec per day
@@ -60,21 +62,30 @@ class TDVBarCard extends HTMLElement
          {
           if(i.startsWith("sensor.")&&i.endsWith("_power"))
            {
-            console.log(i);
-            console.dir(this._hass.states[i]);
+            //console.log(i);
+            //console.dir(this._hass.states[i]);
             if(this.config.entities.push({entity:i,icon:"mdi:power-socket-de",name:this._hass.states[i].attributes.friendly_name})>3) break;
            }
          }
 
        }
 
-      
+
       if(this.config.entities)
        {
         // Prepare entity array
         let a=Array.isArray(this.config.entities)?this.config.entities:[this.config.entities];
-        for(let i in a) this.barData.push({ut:a[i].name??"",t:"",m:"",e:a[i].entity,i:a[i].icon,d:0,h:null,st:a[i].state??null,bar_fg:a[i].barcolor??null});  
-        //ut-user name e-entity i-icon d-cur.data h-hist.data st-entity on/off bar_fg-individual bar color 
+        for(let i in a) 
+         {
+          let bdata={ap:null,fl:false,ut:a[i].name??"",t:"",m:"",e:a[i].entity,i:a[i].icon,d:0,h:null,st:a[i].state??null,bar_fg:a[i].barcolor??this.colors.bar_fg};
+
+          // Creating an array of colors for animation
+          let hsl=this._rgbToHsl(bdata.bar_fg);
+          bdata.bar_fg_a=this._hslToRgb(hsl[0],hsl[1],Math.max(Math.min(this._hass.themes.darkMode?hsl[2]+.15:hsl[2]-.15,1),0));
+          this.barData.push(bdata);  
+         }
+        //ap-animation pos. fl-Load flag  ut-user name e-entity i-icon d-cur.data h-hist.data st-entity on/off bar_fg-bar color  bar_fg_a-bar animation color 
+
        }
       //-------------------------------------------------------------------------------------------
       // Define metrics
@@ -90,9 +101,11 @@ class TDVBarCard extends HTMLElement
       // Calc bar height
       if(this.barData.length) this.metric.bar_h=(this.size_h-this.metric.padding)/this.barData.length;
       //-------------------------------------------------------------------------------------------
-      this.histmode=this.config.histmode??1;         //0-hide 1-normal
-      this.trackingmode=Number(this.config.trackingmode??1); //0-disable 1-bar only 2-history 3-bar and history
-      this.trackingvalue=this.config.trackingvalue??"max";   //min, avg, max
+      this.histmode=this.config.histmode??1;                //0-hide 1-normal
+      this.trackingmode=Number(this.config.trackingmode??1);//0-disable 1-bar only 2-history 3-bar and history
+      this.trackingvalue=this.config.trackingvalue??"max";  //min, avg, max
+      this.animation=Number(this.config.animation??1);      //0-disable 1-enable
+
       // Range
       this.maxpos=this.config.rangemax>0?this.config.rangemax:2000; 
       // Convert range value to log10 scale
@@ -241,9 +254,11 @@ class TDVBarCard extends HTMLElement
        }
      }
     //----------------------------------
+    let ischanged=false;
     // Applay data
     for(let i in this.barData)
      {
+      let old_d=this.barData[i].d;
       if(hass.states[this.barData[i].e])
        {
         this.barData[i].d=+hass.states[this.barData[i].e].state;
@@ -256,6 +271,7 @@ class TDVBarCard extends HTMLElement
         this.barData[i].t="";
         this.barData[i].m="";
        }
+      if(this.animation>0&&old_d!=this.barData[i].d&&this.barData[i].ap==null) {this.barData[i].ap=0;ischanged=true;}
 
       let icon=this.querySelector(`#tdvbar_${i}`);
       if(icon)
@@ -266,6 +282,23 @@ class TDVBarCard extends HTMLElement
         icon.style.color=ison?this.colors.iconon:this.colors.iconoff;
        }
      } 
+
+    if(this._anTimerId==null&&ischanged) {this._anTimerId=setInterval((This)=>
+     {
+      let ch=false;
+      for(let i in This.barData)
+       {
+        if(This.barData[i].ap!=null)
+         {
+          This.barData[i].ap+=0.01
+          if(This.barData[i].ap>=1) This.barData[i].ap=null; 
+          else ch=true;
+         }  
+       }
+      if(!ch) {clearInterval(This._anTimerId); This._anTimerId=null};
+      This._drawAnimationFrame();
+     },10,this);}
+
     this._drawBarContent();
    }
 //#################################################################################################
@@ -352,23 +385,25 @@ class TDVBarCard extends HTMLElement
 //console.log("end:",This.ReqEnd);
 
      }
+    This.barData[baridx].fl=true;
+    This._drawBarContent();
+
     //let data_raw=await This._fetchRecent(This.barData[baridx].e,null,null,false,false);
     let data_raw=await This._fetchRecent(This.barData[baridx].e,This.ReqStart,This.ReqEnd,false,false);
     if(data_raw&&data_raw.length&&data_raw[0]&&data_raw[0].length)
      {
-
       This.barData[baridx].h=This._BuildDataArray(data_raw[0],This.StartMoment,This.CurMoment);
-
-
      }
+    This.barData[baridx].fl=false;
     baridx++;
+    This._drawBarContent();
+
     if(baridx<This.barData.length)
      {
       setTimeout(TDVBarCard._reqHistEntityData,100,This,baridx);
      }
     else
      {
-      This._drawBarContent();
       setTimeout(TDVBarCard._reqHistEntityData,60000,This,0);
      }
    }
@@ -384,6 +419,14 @@ class TDVBarCard extends HTMLElement
     if(withAttributes)   url+='&significant_changes_only=0';
     //url+=`&no_attributes&minimal_response&significant_changes_only=0`;
     return this._hass.callApi('GET', url);
+   }
+//#################################################################################################
+  _getResString(resname,failstr)
+   {
+    if(this._hass&&this._hass.selectedLanguage&&this._hass.resources&&this._hass.resources[this._hass.selectedLanguage]) 
+     return this._hass.resources[this._hass.selectedLanguage][resname]??failstr;
+    else 
+     return failstr;
    }
 //#################################################################################################
   _getPos(v,width)
@@ -463,6 +506,56 @@ class TDVBarCard extends HTMLElement
     return `#${Number(Math.round(r*255)).toString(16).padStart(2, '0')}${Number(Math.round(g*255)).toString(16).padStart(2, '0')}${Number(Math.round(b*255)).toString(16).padStart(2, '0')}`
    }
 //#################################################################################################
+  _drawBarItemAnumationFrame(x, y, width, height,entity,baridx)
+   {
+    let bar_x;
+    if(this.histmode>0) bar_x=x+this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2;
+    else bar_x=x+this.metric.iconwidth+this.metric.padding;
+    let bar_yoffset=this.metric.nameheight;//Math.trunc(height/2);
+
+    // Actual bar data
+    if(entity.d>0&&this._tracker.bar_id!=baridx&&entity.ap!=null)
+     {
+      let dp=this._getPos(entity.d,width-bar_x-1);
+      if(dp>4) 
+       {
+
+        if(entity.ap<0.99)
+         { 
+          const grd=this.ctx.createLinearGradient(bar_x+.5,0,width+.5,0);
+          grd.addColorStop(0, entity.bar_fg);
+          if(entity.ap>0.1) grd.addColorStop(entity.ap-0.1,entity.bar_fg);
+          grd.addColorStop(entity.ap,entity.bar_fg_a);
+          if(entity.ap<0.90) grd.addColorStop(entity.ap+.1,entity.bar_fg);
+          grd.addColorStop(1,entity.bar_fg);
+
+          this.ctx.fillStyle=grd;
+          this.ctx.fillRect(bar_x+1.5,y+bar_yoffset+.5,dp-2.5,height-bar_yoffset-.5);
+         }
+        else
+         {
+          this.ctx.fillStyle=entity.bar_fg;
+          this.ctx.fillRect(bar_x+1.5,y+bar_yoffset+.5,dp-2.5,height-bar_yoffset-.5);
+         }
+
+        // Bar grid
+        this.ctx.strokeStyle=this.colors.bar_grid;
+        this.ctx.beginPath();
+        let gridstep=this.maxposraw/10;
+        for(let s=gridstep;s<this.maxposraw;s+=gridstep)
+         {
+          let a=this._getPos(s,width-bar_x);
+          if(a<(dp-2))
+           { 
+            this.ctx.moveTo(bar_x+a,y+bar_yoffset+1);
+            this.ctx.lineTo(bar_x+a,y+height);
+           }
+         }
+        this.ctx.stroke();
+       }
+     }
+   }
+//#################################################################################################
   _drawBarItem(x, y, width, height,entity,baridx)
    {
     let bar_x;
@@ -524,7 +617,7 @@ class TDVBarCard extends HTMLElement
     // Actual bar data
     if(entity.d>0)
      {
-      this.ctx.fillStyle=entity.bar_fg?entity.bar_fg:this.colors.bar_fg;
+      this.ctx.fillStyle=entity.bar_fg;//?entity.bar_fg:this.colors.bar_fg;
       this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(entity.d,width-bar_x-1),height-bar_yoffset-.5,3,true,true);
      }
     // Tracked bar data
@@ -578,7 +671,15 @@ class TDVBarCard extends HTMLElement
        }
       this.ctx.stroke();
      }
-
+    else if(this.histmode>0)
+     {
+      this.ctx.fillStyle=this.colors.bar_frame;
+      this.ctx.textAlign="center"; 
+      this.ctx.textBaseline="middle";
+      if(entity.fl) this.ctx.fillText(this._getResString("ui.common.loading","Loading")+"...",chart_x+this.metric.chartwidth/2,y+1+height/2,this.metric.chartwidth);
+      else this.ctx.fillText(this._getResString("ui.components.data-table.no-data","No data"),chart_x+this.metric.chartwidth/2,y+1+height/2,this.metric.chartwidth);
+     }
+    this._drawBarItemAnumationFrame(x, y, width, height,entity,baridx);
    }
 //#################################################################################################
   _drawBarContent()
@@ -606,6 +707,17 @@ class TDVBarCard extends HTMLElement
       this.ctx.lineTo(this.metric.iconwidth+this.metric.padding*2+.5+this._tracker.hist_offset+1,this.size_h-this.metric.padding);
       this.ctx.stroke();
       this.ctx.setLineDash([]);
+     }
+   }
+//#################################################################################################
+  _drawAnimationFrame()
+   {
+    let y=this.metric.padding;
+    for(let e in this.barData)
+     {
+      let r_y=Math.round(y);   
+      this._drawBarItemAnumationFrame(this.metric.padding+.5,r_y+.5,this.size_w-(this.metric.padding+1),Math.round(this.metric.bar_h)-(this.metric.padding+.5),this.barData[e],e);
+      y+=this.metric.bar_h;
      }
    }
 //#################################################################################################
