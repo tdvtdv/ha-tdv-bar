@@ -1,4 +1,4 @@
-console.info("%c v1.1.1 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.1.2 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 const LitElement = customElements.get("ha-panel-lovelace") ? Object.getPrototypeOf(customElements.get("ha-panel-lovelace")) : Object.getPrototypeOf(customElements.get("hc-lovelace"));
 const html = LitElement.prototype.html;
@@ -34,6 +34,7 @@ class TDVBarCard extends HTMLElement
     if(!this.canvas)
      {
       this._anTimerId=null;  //Animation timer id 
+      this._anStart=performance.now();
 
       this._tracker={};
       this._broadcast=new BroadcastChannel("tdv-bar");
@@ -283,21 +284,32 @@ class TDVBarCard extends HTMLElement
        }
      } 
 
-    if(this._anTimerId==null&&ischanged) {this._anTimerId=setInterval((This)=>
+    if(this._anTimerId==null&&ischanged)
      {
-      let ch=false;
-      for(let i in This.barData)
+      let draw=()=>
        {
-        if(This.barData[i].ap!=null)
+        let now=performance.now();
+        if((now-this._anStart)>10)
          {
-          This.barData[i].ap+=0.01
-          if(This.barData[i].ap>=1) This.barData[i].ap=null; 
-          else ch=true;
-         }  
+          this._anStart=now;
+
+          let ch=false;
+          for(let i in this.barData)
+           {
+            if(this.barData[i].ap!=null)
+             {
+              this.barData[i].ap+=0.01
+              if(this.barData[i].ap>=1) this.barData[i].ap=null; 
+              else ch=true;
+             }  
+           }
+          if(!ch) this._anTimerId=null; else window.requestAnimationFrame(draw);
+          this._drawAnimationFrame();
+         }
+        else window.requestAnimationFrame(draw);
        }
-      if(!ch) {clearInterval(This._anTimerId); This._anTimerId=null};
-      This._drawAnimationFrame();
-     },10,this);}
+      this._anTimerId=window.requestAnimationFrame(draw);
+     }
 
     this._drawBarContent();
    }
