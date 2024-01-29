@@ -1,11 +1,5 @@
 console.info("%c v1.1.2 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
-const LitElement = customElements.get("ha-panel-lovelace") ? Object.getPrototypeOf(customElements.get("ha-panel-lovelace")) : Object.getPrototypeOf(customElements.get("hc-lovelace"));
-const html = LitElement.prototype.html;
-const css = LitElement.prototype.css;
-//, customElement, property, CSSResult, TemplateResult, PropertyValues
-
-
 class TDVBarCard extends HTMLElement
  {
 //#################################################################################################  
@@ -82,7 +76,11 @@ class TDVBarCard extends HTMLElement
 
           // Creating an array of colors for animation
           let hsl=this._rgbToHsl(bdata.bar_fg);
-          bdata.bar_fg_a=this._hslToRgb(hsl[0],hsl[1],Math.max(Math.min(this._hass.themes.darkMode?hsl[2]+.15:hsl[2]-.15,1),0));
+          let level=hsl[2]/100*50;
+          let newlightness=hsl[2]+level;
+          if(/*newlightness>1*/hsl[2]>=0.5) newlightness=hsl[2]-level;
+
+          bdata.bar_fg_a=this._hslToRgb(hsl[0],hsl[1],newlightness/*Math.max(Math.min(this._hass.themes.darkMode?hsl[2]+.15:hsl[2]-.15,1),0)*/);
           this.barData.push(bdata);  
          }
         //ap-animation pos. fl-Load flag  ut-user name e-entity i-icon d-cur.data h-hist.data st-entity on/off bar_fg-bar color  bar_fg_a-bar animation color 
@@ -95,6 +93,7 @@ class TDVBarCard extends HTMLElement
       this.metric.iconsize=parseInt(this._compStyle.getPropertyValue("--paper-font-headline_-_font-size"));//24;//  style.getPropertyValue("--mdc-icon-size");
       this.metric.iconwidth=this.metric.iconsize;
       this.metric.chartwidth=146;
+      this.metric.nameheight=parseFloat(this._compStyle.getPropertyValue("--paper-font-body1_-_font-size"))+7;
 
       this.size_w = Math.max(this.config.width??300,this.offsetWidth);
       this.size_h = Math.max(this.config.height??(this.barData.length>0?this.barData.length*(this.metric.iconsize*2):200),this.offsetHeight);
@@ -140,11 +139,11 @@ class TDVBarCard extends HTMLElement
       this.canvas=this.querySelector("canvas");
       this.ctx=this.canvas.getContext("2d");
       // Calc font metric
-      this.ctx.save();
-      this.ctx.font=this.fonts.name;
-      let m=this.ctx.measureText("AQq");
-      this.metric.nameheight=m.fontBoundingBoxAscent+m.fontBoundingBoxDescent+5;
-      this.ctx.restore();
+      //this.ctx.save();
+      //this.ctx.font=this.fonts.name;
+      //let m=this.ctx.measureText("AQq");
+      //this.metric.nameheight=m.fontBoundingBoxAscent+m.fontBoundingBoxDescent+5;
+      //this.ctx.restore();
       //-------------------------------
       // set click event handler 
       this.querySelectorAll("ha-icon").forEach(elAnchor=>
@@ -252,7 +251,8 @@ class TDVBarCard extends HTMLElement
       if(this.barData.length)
        {
         if(this.histmode>0) setTimeout(TDVBarCard._reqHistEntityData,100,this,0);
-       }
+      }
+
      }
     //----------------------------------
     let ischanged=false;
@@ -310,6 +310,11 @@ class TDVBarCard extends HTMLElement
        }
       this._anTimerId=window.requestAnimationFrame(draw);
      }
+
+
+    //this.size_w=this.offsetWidth;//this.parentElement.clientWidth-8;//this.clientWidth;
+    //this.canvas.width=this.size_w-2;
+
 
     this._drawBarContent();
    }
@@ -518,7 +523,7 @@ class TDVBarCard extends HTMLElement
     return `#${Number(Math.round(r*255)).toString(16).padStart(2, '0')}${Number(Math.round(g*255)).toString(16).padStart(2, '0')}${Number(Math.round(b*255)).toString(16).padStart(2, '0')}`
    }
 //#################################################################################################
-  _drawBarItemAnumationFrame(x, y, width, height,entity,baridx)
+  _drawBarItemAnimationFrame(x, y, width, height,entity,baridx)
    {
     let bar_x;
     if(this.histmode>0) bar_x=x+this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2;
@@ -691,7 +696,7 @@ class TDVBarCard extends HTMLElement
       if(entity.fl) this.ctx.fillText(this._getResString("ui.common.loading","Loading")+"...",chart_x+this.metric.chartwidth/2,y+1+height/2,this.metric.chartwidth);
       else this.ctx.fillText(this._getResString("ui.components.data-table.no-data","No data"),chart_x+this.metric.chartwidth/2,y+1+height/2,this.metric.chartwidth);
      }
-    this._drawBarItemAnumationFrame(x, y, width, height,entity,baridx);
+    this._drawBarItemAnimationFrame(x, y, width, height,entity,baridx);
    }
 //#################################################################################################
   _drawBarContent()
@@ -728,7 +733,7 @@ class TDVBarCard extends HTMLElement
     for(let e in this.barData)
      {
       let r_y=Math.round(y);   
-      this._drawBarItemAnumationFrame(this.metric.padding+.5,r_y+.5,this.size_w-(this.metric.padding+1),Math.round(this.metric.bar_h)-(this.metric.padding+.5),this.barData[e],e);
+      this._drawBarItemAnimationFrame(this.metric.padding+.5,r_y+.5,this.size_w-(this.metric.padding+1),Math.round(this.metric.bar_h)-(this.metric.padding+.5),this.barData[e],e);
       y+=this.metric.bar_h;
      }
    }
@@ -802,42 +807,10 @@ class TDVBarCard extends HTMLElement
            }
    }
 
-  //static getConfigElement() {return document.createElement("tdv-bar-editor");}
  }
 
 customElements.define("tdv-bar-card", TDVBarCard);
-//#################################################################################################
-//######################################## Editor #################################################
-//#################################################################################################
-/*
-class TDVBarCardEditor extends LitElement 
- {
-  setConfig(config) {this._config = config;}
 
-  //configChanged(newConfig)
-  // {
-  //  const event = new Event("config-changed", {bubbles: true,composed: true,});
-  //  event.detail = { config: newConfig };
-  //  this.dispatchEvent(event);
-  // }
-  render()
-   {
-    return html`
-     <div class="root card-config">
-      <h3>Card elements</h3>
-      <ha-textfield
-                .label=${"Card title"}
-                .placeholder=''
-                .value=${this._config.title || ""}
-                .configValue=${"title"}
-      </ha-textfield>
-     </div>
-    `
-//                @input=${this.update_field}>
-   }
- }
-customElements.define("tdv-bar-editor", TDVBarCardEditor);
-*/
 //#################################################################################################
 window.customCards = window.customCards || [];
 window.customCards.push({
