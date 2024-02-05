@@ -1,4 +1,4 @@
-console.info("%c v1.1.2 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.1.3 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 class TDVBarCard extends HTMLElement
  {
@@ -96,7 +96,7 @@ class TDVBarCard extends HTMLElement
       this.metric.nameheight=parseFloat(this._compStyle.getPropertyValue("--paper-font-body1_-_font-size"))+7;
 
       this.size_w = Math.max(this.config.width??300,this.offsetWidth);
-      this.size_h = Math.max(this.config.height??(this.barData.length>0?this.barData.length*(this.metric.iconsize*2):200),this.offsetHeight);
+      this.size_h = Math.max(this.config.height??(this.barData.length>0?this.barData.length*(this.metric.iconsize*2):200),this.offsetHeight)+this.metric.padding;
 
       // Calc bar height
       if(this.barData.length) this.metric.bar_h=(this.size_h-this.metric.padding)/this.barData.length;
@@ -470,9 +470,47 @@ class TDVBarCard extends HTMLElement
 //#################################################################################################
   _rgbval(color)
    {
-    let hex=color.replace(/^\s*#|\s*$/g,''); // strip the leading # if it's there
-    if(hex.length==3) hex=hex.replace(/(.)/g, '$1$1');  // convert 3 char codes --> 6, e.g. `E0F` --> `EE00FF`
-    return [parseInt(hex.substr(0,2),16),parseInt(hex.substr(2,2),16),parseInt(hex.substr(4,2),16)];
+    //let hex=color.replace(/^\s*#|\s*$/g,''); // strip the leading # if it's there
+    //if(hex.length==3) hex=hex.replace(/(.)/g, '$1$1');  // convert 3 char codes --> 6, e.g. `E0F` --> `EE00FF`
+    //return [parseInt(hex.substr(0,2),16),parseInt(hex.substr(2,2),16),parseInt(hex.substr(4,2),16)];
+
+    //var div = document.createElement('div'), m;
+    //div.style.color = input;
+    //m = getComputedStyle(div).color.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+    //if(m) return [m[1],m[2],m[3]];
+    //else throw new Error("Colour "+input+" could not be parsed.");
+
+    // return an array containing R, G and B values
+    if(color === 'transparent') color = '#FFF';// IE (6 and ?)
+    let r,g,b;
+    let hex_color_pcre = new RegExp("^#[0-9a-f]{3}([0-9a-f]{3})?$",'gi');
+    let rgb_color_pcre = new RegExp("rgb\\(\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*\\)$",'gi');
+    let rgb_percent_color_pcre = new RegExp("rgb\\(\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*\\)$",'gi');
+    let rgba_color_pcre = new RegExp("rgba\\(\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*,.*\\)$",'gi');
+    let rgba_percent_color_pcre = new RegExp("rgba\\(\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,.*\\)$",'gi');
+    if(color.match(hex_color_pcre))
+     {
+      if(color.length==4){r=color.charAt(1)+""+color.charAt(1);g=color.charAt(2)+""+color.charAt(2);b=color.charAt(3)+""+color.charAt(3);}
+      else {r=color.charAt(1)+""+color.charAt(2);g=color.charAt(3)+""+color.charAt(4);b=color.charAt(5)+""+color.charAt(6);}
+      r=parseInt(r,16);g=parseInt(g,16);b=parseInt(b,16);
+     }
+    else if(color.match(rgb_color_pcre)||color.match(rgba_color_pcre)){r=+RegExp.$1;g=+RegExp.$2;b=+RegExp.$3;}
+    else if(color.match(rgb_percent_color_pcre)||color.match(rgba_percent_color_pcre)){r=parseInt((RegExp.$1)*2.55);g=parseInt((RegExp.$2)*2.55);b=parseInt((RegExp.$3)*2.55);}
+    else
+     {
+      const names=[['AliceBlue',240,248,255],['AntiqueWhite',250,235,215],['Aqua',0,255,255],['Aquamarine',127,255,212],['Azure',240,255,255],['Beige',245,245,220],['Bisque',255,228,196],['Black',0,0,0],['BlanchedAlmond',255,235,205],['Blue',0,0,255],['BlueViolet',138,43,226],['Brown',165,42,42],['BurlyWood',222,184,135],['CadetBlue',95,158,160],['Chartreuse',127,255,0],['Chocolate',210,105,30],['Coral',255,127,80],['CornflowerBlue',100,149,237],['Cornsilk',255,248,220],['Crimson',220,20,60],['Cyan',0,255,255],['DarkBlue',0,0,139],['DarkCyan',0,139,139],['DarkGoldenRod',184,134,11],['DarkGray',169,169,169],['DarkGrey',169,169,169],['DarkGreen',0,100,0],['DarkKhaki',189,183,107],['DarkMagenta',139,0,139],['DarkOliveGreen',85,107,47],['DarkOrange',255,140,0],['DarkOrchid',153,50,204],['DarkRed',139,0,0],['DarkSalmon',233,150,122],['DarkSeaGreen',143,188,143],['DarkSlateBlue',72,61,139],['DarkSlateGray',47,79,79],['DarkSlateGrey',47,79,79],['DarkTurquoise',0,206,209],['DarkViolet',148,0,211],['DeepPink',255,20,147],['DeepSkyBlue',0,191,255],['DimGray',105,105,105],['DimGrey',105,105,105],['DodgerBlue',30,144,255],['FireBrick',178,34,34],['FloralWhite',255,250,240],['ForestGreen',34,139,34],['Fuchsia',255,0,255],['Gainsboro',220,220,220],['GhostWhite',248,248,255],['Gold',255,215,0],['GoldenRod',218,165,32],['Gray',128,128,128],['Grey',128,128,128],['Green',0,128,0],['GreenYellow',173,255,47],['HoneyDew',240,255,240],['HotPink',255,105,180],['IndianRed',205,92,92],['Indigo',75,0,130],['Ivory',255,255,240],['Khaki',240,230,140],['Lavender',230,230,250],['LavenderBlush',255,240,245],['LawnGreen',124,252,0],['LemonChiffon',255,250,205],['LightBlue',173,216,230],['LightCoral',240,128,128],['LightCyan',224,255,255],['LightGoldenRodYellow',250,250,210],['LightGray',211,211,211],['LightGrey',211,211,211],['LightGreen',144,238,144],['LightPink',255,182,193],['LightSalmon',255,160,122],['LightSeaGreen',32,178,170],['LightSkyBlue',135,206,250],['LightSlateGray',119,136,153],['LightSlateGrey',119,136,153],['LightSteelBlue',176,196,222],['LightYellow',255,255,224],['Lime',0,255,0],['LimeGreen',50,205,50],['Linen',250,240,230],['Magenta',255,0,255],['Maroon',128,0,0],['MediumAquaMarine',102,205,170],['MediumBlue',0,0,205],['MediumOrchid',186,85,211],['MediumPurple',147,112,219],['MediumSeaGreen',60,179,113],['MediumSlateBlue',123,104,238],['MediumSpringGreen',0,250,154],['MediumTurquoise',72,209,204],['MediumVioletRed',199,21,133],['MidnightBlue',25,25,112],['MintCream',245,255,250],['MistyRose',255,228,225],['Moccasin',255,228,181],['NavajoWhite',255,222,173],['Navy',0,0,128],['OldLace',253,245,230],['Olive',128,128,0],['OliveDrab',107,142,35],['Orange',255,165,0],['OrangeRed',255,69,0],['Orchid',218,112,214],['PaleGoldenRod',238,232,170],['PaleGreen',152,251,152],['PaleTurquoise',175,238,238],['PaleVioletRed',219,112,147],['PapayaWhip',255,239,213],['PeachPuff',255,218,185],['Peru',205,133,63],['Pink',255,192,203],['Plum',221,160,221],['PowderBlue',176,224,230],['Purple',128,0,128],['RebeccaPurple',102,51,153],['Red',255,0,0],['RosyBrown',188,143,143],['RoyalBlue',65,105,225],['SaddleBrown',139,69,19],['Salmon',250,128,114],['SandyBrown',244,164,96],['SeaGreen',46,139,87],['SeaShell',255,245,238],['Sienna',160,82,45],['Silver',192,192,192],['SkyBlue',135,206,235],['SlateBlue',106,90,205],['SlateGray',112,128,144],['SlateGrey',112,128,144],['Snow',255,250,250],['SpringGreen',0,255,127],['SteelBlue',70,130,180],['Tan',210,180,140],['Teal',0,128,128],['Thistle',216,191,216],['Tomato',255,99,71],['Turquoise',64,224,208],['Violet',238,130,238],['Wheat',245,222,179],['White',255,255,255],['WhiteSmoke',245,245,245],['Yellow',255,255,0],['YellowGreen',154,205,50]];
+      for (let i=0;i<names.length;i++)
+       {
+        if(color.toLowerCase()==names[i][0].toLowerCase())
+         {
+          return [names[i][1],names[i][2],names[i][3]];
+         }
+       }
+      return [255,255,255];// Invalid color
+     }
+    return [r,g,b];
+
+
    }
 //#################################################################################################
   _rgbToHsl(color)
@@ -702,8 +740,10 @@ class TDVBarCard extends HTMLElement
   _drawBarContent()
    {
     this._rebuildColorValue();
-    this.ctx.fillStyle=this.colors.card_bg;
-    this.ctx.fillRect(0,0,this.size_w,this.size_h); 
+    this.ctx.clearRect(0, 0,this.size_w,this.size_h);
+
+    //this.ctx.fillStyle=this.colors.card_bg;
+    //this.ctx.fillRect(0,0,this.size_w,this.size_h); 
     this.ctx.lineWidth=1;
     // Draw content
     let y=this.metric.padding;
@@ -724,6 +764,35 @@ class TDVBarCard extends HTMLElement
       this.ctx.lineTo(this.metric.iconwidth+this.metric.padding*2+.5+this._tracker.hist_offset+1,this.size_h-this.metric.padding);
       this.ctx.stroke();
       this.ctx.setLineDash([]);
+
+      if(this._tracker.bar_id!=null)
+       {
+        // position
+        let d=new Date(Date.now()-(146-(this._tracker.hist_offset+1))*this._scale);
+        let s=" ≈"+d.toLocaleTimeString([],{hour: '2-digit', minute:'2-digit'})+" "; //   (146-(this._tracker.hist_offset+1))*this._scale;
+
+        let m=this.ctx.measureText(s).width;
+
+        this.ctx.fillStyle=this.colors.tracker1;
+        this.ctx.textBaseline="middle";
+
+        let s_x=this.metric.padding+.5+(this.metric.iconwidth+this.metric.padding);
+        if(this._tracker.hist_offset>(this.metric.chartwidth/2)) this.ctx.textAlign="left",s_x+=this.metric.padding/2;
+        else s_x+=this.metric.chartwidth-m;//this.metric.padding/2;
+        let s_y=this.metric.padding/2+this.metric.bar_h*this._tracker.bar_id+1+this.metric.bar_h/2
+
+        this.ctx.fillStyle=this.colors.card_bg;
+        this._roundRect(s_x,s_y-(this.metric.nameheight/2+1),m,this.metric.nameheight,5,true,true);
+
+
+        this.ctx.fillStyle=this.colors.tracker1;
+        this.ctx.fillText(s,
+                          s_x,
+                          s_y,
+                          this.metric.chartwidth);
+       }
+
+
      }
    }
 //#################################################################################################
@@ -740,10 +809,18 @@ class TDVBarCard extends HTMLElement
 //#################################################################################################
   _rebuildColorValue()
    {
+//console.log("---->",this._compStyle.getPropertyValue("--divider-color"));
+//console.dir(this._compStyle);
+
     let hsl;
     let isDarkMode=this._hass.themes.darkMode;
     this.colors={}
-    this.colors.card_bg=     this._compStyle.getPropertyValue("--mdc-theme-surface");
+
+//    this.colors.card_bg=     this._compStyle.getPropertyValue("--mdc-theme-surface");
+    this.colors.card_bg=     this._compStyle.getPropertyValue("--ha-card-background");
+    if(!this.colors.card_bg) this.colors.card_bg=     this._compStyle.getPropertyValue("--card-background-color");
+    if(!this.colors.card_bg) this.colors.card_bg=     "#fff";
+
     this.colors.bar_frame=   this._compStyle.getPropertyValue("--divider-color");
     this.colors.bar_fg=      this._compStyle.getPropertyValue("--mdc-theme-primary");
 
@@ -751,8 +828,11 @@ class TDVBarCard extends HTMLElement
     this.colors.bar_tracker= `rgba(${hsl[0]},${hsl[1]},${hsl[2]},.5)`;
 
     this.colors.chart_fg=    this._compStyle.getPropertyValue("--mdc-theme-secondary");
-    hsl=this._rgbToHsl(this.colors.chart_fg);
-    this.colors.chart_fghalf=this._hslToRgb(hsl[0],hsl[1],isDarkMode?hsl[2]-.25:hsl[2]+.25);
+    //hsl=this._rgbToHsl(this.colors.chart_fg);
+    //this.colors.chart_fghalf=this._hslToRgb(hsl[0],hsl[1],isDarkMode?hsl[2]-.25:hsl[2]+.25);
+    hsl=this._rgbval(this.colors.chart_fg);
+    this.colors.chart_fghalf=`rgba(${hsl[0]},${hsl[1]},${hsl[2]},.5)`;
+
     this.colors.bar_grid=  isDarkMode?"rgba(255,255,255,0.2)":"rgba(0,0,0,0.2)";
     this.colors.tracker1=    this._compStyle.getPropertyValue("--mdc-theme-primary");
     this.colors.iconoff=     this._compStyle.getPropertyValue("--mdc-theme-text-icon-on-background");
