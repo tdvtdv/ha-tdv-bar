@@ -43,17 +43,28 @@ Install via HACS
 | trackingmode      | number  | **Optional** | 1                   | Mouse tracking mode<br>0-disable<br>1-bar only<br>2-history<br>3-bar and history
 | trackingvalue     | string  | **Optional** | max                 | Type of value to be tracked (min, avg, max)
 | scaletype         | string  | **Optional** | log10               | Scale type (linear or log10 )
+| colors            | object  | **Optional** |                     | Colors section See [Colors](#Colors)
 | entities          | object  | **Required** |                     | Displayed entities. See [Entities](#Entities)
+
+### Colors
+
+| Name              | Type    | Requirement  | Description                                 |
+| ----------------- | ------- | ------------ | ------------------------------------------- |
+| chart_bg          | string  | **Optional** | Chart background color
+| chart             | string  | **Optional** | Chart color
+| bar_bg            | string  | **Optional** | Bar background color
+| bar               | string  | **Optional** | Bar color
+| frame             | string  | **Optional** | Char and bar frame color
 
 ### Entities
 
-| Name              | Type    | Requirement  | Default              | Description                                 |
-| ----------------- | ------- | ------------ | -------------------- | ------------------------------------------- |
-| entity            | string  | **Required** |                      | Entity id of the sensor
-| icon              | string  | **Optional** |                      | Icon for this entity
-| name              | string  | **Optional** |                      | Custom label for this entity
-| state             | string  | **Optional** |                      | Change state entity id (e.g. switch)
-| barcolor          | string  | **Optional** | Prymary system color | Individual bar color
+| Name              | Type    | Requirement  | Description                                 |
+| ----------------- | ------- | ------------ | ------------------------------------------- |
+| entity            | string  | **Required** | Entity id of the sensor
+| icon              | string  | **Optional** | Icon for this entity
+| name              | string  | **Optional** | Custom label for this entity
+| state             | string  | **Optional** | Change state entity id (e.g. switch)
+| barcolor          | string  | **Optional** | Individual bar color
 
 
 ![Video example](img/vid.gif)

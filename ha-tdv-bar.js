@@ -1,4 +1,4 @@
-console.info("%c v1.1.4 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.1.5 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 class TDVBarCard extends HTMLElement
  {
@@ -237,6 +237,7 @@ class TDVBarCard extends HTMLElement
       //-------------------------------
       new ResizeObserver(()=>
        {
+        this._rebuildColorValue();
 //console.log("ResizeObserver");
 //debugger
         this.size_w=this.offsetWidth;//this.parentElement.clientWidth-8;//this.clientWidth;
@@ -621,12 +622,12 @@ class TDVBarCard extends HTMLElement
     let bar_yoffset=this.metric.nameheight;//Math.trunc(height/2);
     let chart_x=x+this.metric.iconwidth+this.metric.padding;
 
-    // Draw main bar and char frame
-    this.ctx.fillStyle=this.colors.card_bg;//bar_bg;
     this.ctx.strokeStyle=this.colors.bar_frame;
-
+    // Draw main bar and char frame
+    this.ctx.fillStyle=this.colors.bar_bg;//this.colors.card_bg;
     this._roundRect(bar_x,y+bar_yoffset,width-bar_x+.5, height-bar_yoffset+.5,3,true,true);
-    this.ctx.fillStyle=this.colors.card_bg;//this.colors.chart_bg
+
+    this.ctx.fillStyle=this.colors.chart_bg;//this.colors.card_bg
     if(this.histmode>0) this._roundRect(chart_x,y,this.metric.chartwidth+2,height+.5,0,true,true);
 
     // Text block
@@ -739,7 +740,7 @@ class TDVBarCard extends HTMLElement
 //#################################################################################################
   _drawBarContent()
    {
-    this._rebuildColorValue();
+    //this._rebuildColorValue();
     this.ctx.clearRect(0, 0,this.size_w,this.size_h);
 
     //this.ctx.fillStyle=this.colors.card_bg;
@@ -809,25 +810,29 @@ class TDVBarCard extends HTMLElement
 //#################################################################################################
   _rebuildColorValue()
    {
-//console.log("---->",this._compStyle.getPropertyValue("--divider-color"));
-//console.dir(this._compStyle);
+    //console.dir(this.config.colors);
 
     let hsl;
     let isDarkMode=this._hass.themes.darkMode;
     this.colors={}
 
-//    this.colors.card_bg=     this._compStyle.getPropertyValue("--mdc-theme-surface");
+    //this.colors.card_bg=     this._compStyle.getPropertyValue("--mdc-theme-surface");
     this.colors.card_bg=     this._compStyle.getPropertyValue("--ha-card-background");
     if(!this.colors.card_bg) this.colors.card_bg=     this._compStyle.getPropertyValue("--card-background-color");
     if(!this.colors.card_bg) this.colors.card_bg=     "#fff";
 
-    this.colors.bar_frame=   this._compStyle.getPropertyValue("--divider-color");
-    this.colors.bar_fg=      this._compStyle.getPropertyValue("--mdc-theme-primary");
+    if(this.config.colors&&this.config.colors.frame) this.colors.bar_frame=this.config.colors.frame;
+    else this.colors.bar_frame=   this._compStyle.getPropertyValue("--divider-color");
+
+    if(this.config.colors&&this.config.colors.bar) this.colors.bar_fg=this.config.colors.bar;
+    else this.colors.bar_fg=      this._compStyle.getPropertyValue("--mdc-theme-primary");
 
     hsl=this._rgbval(this._compStyle.getPropertyValue("--mdc-theme-secondary"));
     this.colors.bar_tracker= `rgba(${hsl[0]},${hsl[1]},${hsl[2]},.5)`;
 
-    this.colors.chart_fg=    this._compStyle.getPropertyValue("--mdc-theme-secondary");
+    if(this.config.colors&&this.config.colors.chart) this.colors.chart_fg=this.config.colors.chart;
+    else this.colors.chart_fg=    this._compStyle.getPropertyValue("--mdc-theme-secondary");
+
     //hsl=this._rgbToHsl(this.colors.chart_fg);
     //this.colors.chart_fghalf=this._hslToRgb(hsl[0],hsl[1],isDarkMode?hsl[2]-.25:hsl[2]+.25);
     hsl=this._rgbval(this.colors.chart_fg);
@@ -838,10 +843,13 @@ class TDVBarCard extends HTMLElement
     this.colors.iconoff=     this._compStyle.getPropertyValue("--mdc-theme-text-icon-on-background");
     this.colors.iconon=      this._compStyle.getPropertyValue("--mdc-theme-secondary");
     this.colors.name=        this._compStyle.getPropertyValue("--primary-text-color"); 
-    hsl=this._rgbToHsl(this.colors.bar_fg);
-    this.colors.bar_bg=      this._hslToRgb(hsl[0],hsl[1],hsl[2]-.35);
-    hsl=this._rgbToHsl(this.colors.chart_fg);
-    this.colors.chart_bg=    this._hslToRgb(hsl[0],hsl[1],hsl[2]-.35);
+
+
+    if(this.config.colors&&this.config.colors.bar_bg) this.colors.bar_bg=this.config.colors.bar_bg;
+    else this.colors.bar_bg=this.colors.card_bg;
+
+    if(this.config.colors&&this.config.colors.chart_bg) this.colors.chart_bg=this.config.colors.chart_bg;
+    else this.colors.chart_bg=this.colors.card_bg;
    }
 //#################################################################################################
 //  _roundDate(date)
