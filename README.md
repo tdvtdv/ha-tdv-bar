@@ -1,23 +1,17 @@
 # ha-tdv-bar
 A Home Assistant lovelace card to display bar chart  oriented to display power sensors
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 
 ![Simple example card](img/main-image_d.png) ![Simple example card](img/main-image_w.png)
 
 
 ## Installation
 
-For installation you should have [HACS](https://hacs.xyz/docs/setup/download/) installed. Then add this repository https://github.com/tdvtdv/ha-tdv-bar in HACS and install the card. You have to reload you browser after installation.
+### HACS
 
-Then you can add the new card into your dashboard.
-
-### Easiest method
-
-Install via HACS
-
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=tdvtdv&repository=ha-tdv-bar&category=plugin)
+This card is available in HACS (Home Assistant Community Store).
+HACS is a third party community store and is not included in Home Assistant out of the box.
 
 ### Alternative method
 
@@ -27,7 +21,6 @@ Install via HACS
    JavaScript Module.
    [![Open your Home Assistant instance and show your dashboard resources.](https://my.home-assistant.io/badges/lovelace_resources.svg)](https://my.home-assistant.io/redirect/lovelace_resources/)
 4. Refresh your browser
-
 
 
 ## Options
@@ -44,7 +37,9 @@ Install via HACS
 | trackingvalue     | string  | **Optional** | max                 | Type of value to be tracked (min, avg, max)
 | scaletype         | string  | **Optional** | log10               | Scale type (linear or log10 )
 | colors            | object  | **Optional** |                     | Colors section See [Colors](#Colors)
+| defaulticon       | string  | **Optional** | mdi:power           | Default icon for all unassigned entity icon
 | entities          | object  | **Required** |                     | Displayed entities. See [Entities](#Entities)
+
 
 ### Colors
 
@@ -54,7 +49,8 @@ Install via HACS
 | chart             | string  | **Optional** | Chart color
 | bar_bg            | string  | **Optional** | Bar background color
 | bar               | string  | **Optional** | Bar color
-| frame             | string  | **Optional** | Char and bar frame color
+| frame             | string  | **Optional** | Chart and bar frame color
+| fontcolor         | string  | **Optional** | The color of the entity name and data
 
 ### Entities
 

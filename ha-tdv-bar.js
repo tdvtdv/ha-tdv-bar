@@ -1,4 +1,4 @@
-console.info("%c v1.1.5 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.1.6 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 class TDVBarCard extends HTMLElement
  {
@@ -59,7 +59,7 @@ class TDVBarCard extends HTMLElement
            {
             //console.log(i);
             //console.dir(this._hass.states[i]);
-            if(this.config.entities.push({entity:i,icon:"mdi:power-socket-de",name:this._hass.states[i].attributes.friendly_name})>3) break;
+            if(this.config.entities.push({entity:i,icon:"mdi:power",name:this._hass.states[i].attributes.friendly_name})>3) break;
            }
          }
 
@@ -69,10 +69,23 @@ class TDVBarCard extends HTMLElement
       if(this.config.entities)
        {
         // Prepare entity array
+
         let a=Array.isArray(this.config.entities)?this.config.entities:[this.config.entities];
         for(let i in a) 
          {
           let bdata={ap:null,fl:false,ut:a[i].name??"",t:"",m:"",e:a[i].entity,i:a[i].icon,d:0,h:null,st:a[i].state??null,bar_fg:a[i].barcolor??this.colors.bar_fg};
+             
+          if(!bdata.ut&&this._hass.entities[a[i]?.entity]?.device_id)
+           {
+            bdata.ut=this._hass.devices[this._hass.entities[a[i].entity].device_id].name;
+           }
+
+          if(!bdata.i)
+           {
+            bdata.i=this._hass.entities[a[i].entity]?.icon;
+            if(!bdata.i) bdata.i=this._hass.states[a[i].entity]?.attributes?.icon;
+            if(!bdata.i) bdata.i=this.config.defaulticon??"mdi:power";
+           }
 
           // Creating an array of colors for animation
           let hsl=this._rgbToHsl(bdata.bar_fg);
@@ -842,8 +855,9 @@ class TDVBarCard extends HTMLElement
     this.colors.tracker1=    this._compStyle.getPropertyValue("--mdc-theme-primary");
     this.colors.iconoff=     this._compStyle.getPropertyValue("--mdc-theme-text-icon-on-background");
     this.colors.iconon=      this._compStyle.getPropertyValue("--mdc-theme-secondary");
-    this.colors.name=        this._compStyle.getPropertyValue("--primary-text-color"); 
 
+    if(this.config.colors&&this.config.colors.fontcolor) this.colors.name=this.config.colors.fontcolor;
+    else this.colors.name=        this._compStyle.getPropertyValue("--primary-text-color"); 
 
     if(this.config.colors&&this.config.colors.bar_bg) this.colors.bar_bg=this.config.colors.bar_bg;
     else this.colors.bar_bg=this.colors.card_bg;
