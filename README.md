@@ -30,6 +30,7 @@ HACS is a third party community store and is not included in Home Assistant out 
 | type              | string  | **Required** |                     | `custom:tdv-bar-card`
 | title             | string  | **Optional** |                     | Optional header title for the card
 | height            | number  | **Optional** |                     | The height of the card in pixels
+| rangemin          | number  | **Optional** | 0                   | Minimum bar scale range  (linear only)
 | rangemax          | number  | **Optional** | 2000                | Maximum bar scale range
 | histmode          | number  | **Optional** | 1                   | Historical chart display mode<br>0-hide<br>1-show
 | animation         | number  | **Optional** | 1                   | Bar chart animation<br>0-disable<br>1-enable
@@ -60,6 +61,9 @@ HACS is a third party community store and is not included in Home Assistant out 
 | icon              | string  | **Optional** | Icon for this entity
 | name              | string  | **Optional** | Custom label for this entity
 | state             | string  | **Optional** | Change state entity id (e.g. switch)
+| rangemin          | number  | **Optional** | Minimum bar scale range  (linear only)
+| rangemax          | number  | **Optional** | Maximum bar scale range
+| scaletype         | string  | **Optional** | Scale type (linear or log10 )
 | barcolor          | string  | **Optional** | Individual bar color
 
 
