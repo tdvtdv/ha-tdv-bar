@@ -66,6 +66,22 @@ class TDVBarCard extends HTMLElement
        }
 
 
+      // Range
+      this.minpos=this.config.rangemin>0?this.config.rangemin:0;
+      this.maxpos=this.config.rangemax>0?this.config.rangemax:2000; 
+      // Convert range value to log10 scale
+      this.minposraw=this.minpos;
+      this.maxposraw=this.maxpos;
+
+      switch(this.config.scaletype?this.config.scaletype.toLowerCase():"log10")
+       {
+        case "linear": break;
+        case "log10": 
+          this.maxpos=Math.log10(this.maxpos);
+          this.minpos=Math.log10(this.minpos);
+          break;
+       } 
+
       if(this.config.entities)
        {
         // Prepare entity array
@@ -73,7 +89,18 @@ class TDVBarCard extends HTMLElement
         let a=Array.isArray(this.config.entities)?this.config.entities:[this.config.entities];
         for(let i in a) 
          {
-          let bdata={ap:null,fl:false,ut:a[i].name??"",t:"",m:"",e:a[i].entity,i:a[i].icon,d:0,h:null,st:a[i].state??null,bar_fg:a[i].barcolor??this.colors.bar_fg,minpos:a[i].minpos??null,maxpos:a[i].maxpos??null};
+          let bdata={ ap:null,
+                      fl:false,
+                      ut:a[i].name??"",
+                      t:"",
+                      m:"",
+                      e:a[i].entity,
+                      i:a[i].icon,
+                      d:0,h:null,
+                      st:a[i].state??null,
+                      bar_fg:a[i].barcolor??this.colors.bar_fg,
+                      minpos:a[i].rangemin>0?a[i].rangemin:this.minposraw,
+                      maxpos:a[i].rangemax>0?a[i].rangemax:this.maxposraw};
              
           if(!bdata.ut&&this._hass.entities[a[i]?.entity]?.device_id)
            {
@@ -92,8 +119,8 @@ class TDVBarCard extends HTMLElement
           bdata.maxposraw=bdata.maxpos;
           if (this.config.scaletype?this.config.scaletype.toLowerCase():"log10"=="log10")
            {
-            if(bdata.minpos) bdata.minpos=Math.log10(bdata.minpos);
-            if(bdata.maxpos) bdata.maxpos=Math.log10(bdata.maxpos);
+            bdata.minpos=Math.log10(bdata.minpos);
+            bdata.maxpos=Math.log10(bdata.maxpos);
            }
           // Creating an array of colors for animation
           let hsl=this._rgbToHsl(bdata.bar_fg);
@@ -127,21 +154,6 @@ class TDVBarCard extends HTMLElement
       this.trackingvalue=this.config.trackingvalue??"max";  //min, avg, max
       this.animation=Number(this.config.animation??1);      //0-disable 1-enable
 
-      // Range
-      this.minpos=this.config.rangemin>0?this.config.rangemin:0;
-      this.maxpos=this.config.rangemax>0?this.config.rangemax:2000; 
-      // Convert range value to log10 scale
-      this.minposraw=this.minpos;
-      this.maxposraw=this.maxpos;
-
-      switch(this.config.scaletype?this.config.scaletype.toLowerCase():"log10")
-       {
-        case "linear": break;
-        case "log10": 
-          this.maxpos=Math.log10(this.maxpos);
-          this.minpos=Math.log10(this.minpos);
-          break;
-       } 
       //-------------------------------------------------------------------------------------------
       // Create card content
       let cnthtml=`<ha-card header="${this.config.title??''}" style="line-height:0;"><div style="position:relative;">`
@@ -598,7 +610,7 @@ class TDVBarCard extends HTMLElement
     // Actual bar data
     if(entity.d>0&&this._tracker.bar_id!=baridx&&entity.ap!=null)
      {
-      let dp=this._getPos(entity.d,width-bar_x-1,entity.minpos??this.minpos,entity.maxpos??this.maxpos);
+      let dp=this._getPos(entity.d,width-bar_x-1,entity.minpos,entity.maxpos);
       if(dp>4) 
        {
 
@@ -623,10 +635,10 @@ class TDVBarCard extends HTMLElement
         // Bar grid
         this.ctx.strokeStyle=this.colors.bar_grid;
         this.ctx.beginPath();
-        let gridstep=this.maxposraw/10;
-        for(let s=gridstep;s<this.maxposraw;s+=gridstep)
+        let gridstep=entity.maxposraw/10;
+        for(let s=gridstep;s<entity.maxposraw;s+=gridstep)
          {
-          let a=this._getPos(s,width-bar_x,entity.minpos??this.minpos,entity.maxpos??this.maxpos);
+          let a=this._getPos(s,width-bar_x,entity.minpos,entity.maxpos);
           if(a<(dp-2))
            { 
             this.ctx.moveTo(bar_x+a,y+bar_yoffset+1);
@@ -700,23 +712,23 @@ class TDVBarCard extends HTMLElement
     if(entity.d>0)
      {
       this.ctx.fillStyle=entity.bar_fg;//?entity.bar_fg:this.colors.bar_fg;
-      this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(entity.d,width-bar_x-1,entity.minpos??this.minpos,entity.maxpos??this.maxpos),height-bar_yoffset-.5,3,true,true);
+      this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(entity.d,width-bar_x-1,entity.minpos,entity.maxpos),height-bar_yoffset-.5,3,true,true);
      }
     // Tracked bar data
     if(this._tracker.data!=null&&this._tracker.data>0&&this._tracker.bar_id!=null&&this._tracker.bar_id==baridx&&(this.trackingmode==1||this.trackingmode==3))
      {
       this.ctx.fillStyle=this.colors.bar_tracker;
-      this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(this._tracker.data,width-bar_x-1,entity.minpos??this.minpos,entity.maxpos??this.maxpos),height-bar_yoffset-.5,3,true,true);
+      this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(this._tracker.data,width-bar_x-1,entity.minpos,entity.maxpos),height-bar_yoffset-.5,3,true,true);
      }
 
     // Draw grid block
     this.ctx.strokeStyle=this.colors.bar_grid;
     // Bar grid
     this.ctx.beginPath();
-    let gridstep=(entity.maxposraw??this.maxposraw)/10;
-    for(let s=gridstep;s<this.maxposraw;s+=gridstep)
+    let gridstep=(entity.maxposraw)/10;
+    for(let s=gridstep;s<entity.maxposraw;s+=gridstep)
      {
-      let a=this._getPos(s,width-bar_x,entity.minpos??this.minpos,entity.maxpos??this.maxpos);
+      let a=this._getPos(s,width-bar_x,entity.minpos,entity.maxpos);
       this.ctx.moveTo(bar_x+a,y+bar_yoffset+1);
       this.ctx.lineTo(bar_x+a,y+height);
      }
@@ -731,7 +743,7 @@ class TDVBarCard extends HTMLElement
        {
         if(entity.h[i]&&entity.h[i].mx)
          {
-          let a=this._getPos(entity.h[i].mx,height-2,entity.minpos??this.minpos,entity.maxpos??this.maxpos);
+          let a=this._getPos(entity.h[i].mx,height-2,entity.minpos,entity.maxpos);
           this.ctx.moveTo(chart_x+i+1,y+height);
           this.ctx.lineTo(chart_x+i+1,(y+height-a));
          }
@@ -745,7 +757,7 @@ class TDVBarCard extends HTMLElement
        {
         if(entity.h[i]&&entity.h[i].v)
          {
-          let a=this._getPos(entity.h[i].v,height-2,entity.minpos??this.minpos,entity.maxpos??this.maxpos);
+          let a=this._getPos(entity.h[i].v,height-2,entity.minpos,entity.maxpos);
           this.ctx.moveTo(chart_x+i+1,y+height);
           this.ctx.lineTo(chart_x+i+1,(y+height-a));
 //          this.ctx.fillRect(chart_x+i+1-.5,(y+height-a),1,1);
