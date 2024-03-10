@@ -1,4 +1,4 @@
-console.info("%c v1.1.6 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.1.7 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 class TDVBarCard extends HTMLElement
  {
@@ -114,8 +114,9 @@ class TDVBarCard extends HTMLElement
       // Calc bar height
       if(this.barData.length) this.metric.bar_h=(this.size_h-this.metric.padding)/this.barData.length;
       //-------------------------------------------------------------------------------------------
-      this.histmode=this.config.histmode??1;                //0-hide 1-normal
-      this.trackingmode=Number(this.config.trackingmode??1);//0-disable 1-bar only 2-history 3-bar and history
+      this.cfghistmode=this.config.histmode??1;             //0-hide 1-normal
+      this.histmode=this.cfghistmode;                       //!!! This variable can be overwritten if the width of the widget is insufficient
+      this.trackingmode=Number(this.config.trackingmode??1);//0-disable 1-bar only 2-history 3-bar and history 4-all bars and history  
       this.trackingvalue=this.config.trackingvalue??"max";  //min, avg, max
       this.animation=Number(this.config.animation??1);      //0-disable 1-enable
 
@@ -218,23 +219,11 @@ class TDVBarCard extends HTMLElement
             if(this.histmode>0&&lx>(this.metric.iconwidth+this.metric.padding)&&lx<(this.metric.iconwidth+this.metric.padding+this.metric.chartwidth+1))
              {
               hist_offset=lx-(this.metric.iconwidth+this.metric.padding+1);
-              if(i>=0&&i<this.barData.length&&this.barData[i]&&this.barData[i].h)
-               {
-                switch(this.trackingvalue)
-                 {
-                  case "min": data=this.barData[i].h[hist_offset].mn;break
-                  case "avg": data=this.barData[i].h[hist_offset].v;break
-                  case "max": 
-                  default:    data=this.barData[i].h[hist_offset].mx;break
-                 } 
-               }
-              //data=Math.pow(10,ly)
-              //console.log("mouse move:",lx,ly,bar_id,hist_offset,data);
-
+              data=this._getBarHistData(i,hist_offset);
              }
            }
          }
-        if(this.trackingmode==2||this.trackingmode==3) this._broadcast.postMessage({hist_offset,data,bar_id});
+        if(this.trackingmode>=2) this._broadcast.postMessage({hist_offset,data,bar_id});
         this._tracker.hist_offset=hist_offset;
         this._tracker.data=data;
         this._tracker.bar_id=bar_id;
@@ -248,19 +237,19 @@ class TDVBarCard extends HTMLElement
         this._drawBarContent();
        };
       //-------------------------------
-      new ResizeObserver(()=>
+      new ResizeObserver(rsentries=>
        {
         this._rebuildColorValue();
-//console.log("ResizeObserver");
-//debugger
         this.size_w=this.offsetWidth;//this.parentElement.clientWidth-8;//this.clientWidth;
+        this.histmode=(this.size_w<(this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2))?0:this.cfghistmode;
+
         //console.log('content dimension changed',this.clientWidth,this.clientHeight);
         this.canvas.width=this.size_w-2;
         //this.Context.canvas.height=this.h;
         this._drawBarContent();
-       }).observe(this);
 
-      //this.prepareTimeRangeForHistReq();
+       }).observe(this.getElementsByTagName('ha-card')[0]);
+
       // if some bar defined start history data requester timer
       if(this.barData.length)
        {
@@ -324,13 +313,23 @@ class TDVBarCard extends HTMLElement
        }
       this._anTimerId=window.requestAnimationFrame(draw);
      }
-
-
-    //this.size_w=this.offsetWidth;//this.parentElement.clientWidth-8;//this.clientWidth;
-    //this.canvas.width=this.size_w-2;
-
-
     this._drawBarContent();
+   }
+//#################################################################################################
+  _getBarHistData(BarIdx,HistIdx)
+   {
+    let data;
+    if(BarIdx>=0&&BarIdx<this.barData.length&&this.barData[BarIdx]&&this.barData[BarIdx].h)
+     {
+      switch(this.trackingvalue)
+       {
+        case "min": data=this.barData[BarIdx].h[HistIdx]?.mn;break
+        case "avg": data=this.barData[BarIdx].h[HistIdx]?.v;break
+        case "max": 
+        default:    data=this.barData[BarIdx].h[HistIdx]?.mx;break
+       } 
+     }
+    return data;
    }
 //#################################################################################################
   _fire(type, detail, options)
@@ -359,6 +358,7 @@ class TDVBarCard extends HTMLElement
     let valavg=null;
     let valcount=0;
     let idx=null;
+    let isActive=false; // If any history data is present (exclude 0) then entity is active
   
     for(let r=0,i=Start;i<=Finish;i++)
      {
@@ -392,13 +392,14 @@ class TDVBarCard extends HTMLElement
         if(valmin!=null) valmin=Math.min(valmin,last); else valmin=last;
         if(valmax!=null) valmax=Math.max(valmax,last); else valmax=last;
        } 
+      isActive=isActive||valavg>0;
       res[i-Start]={/*k:i,*/v:valcount?valavg/valcount:null,mx:valmax,mn:valmin};
       valcount=0;
       valmin=null;
       valmax=null;
       valavg=null;
      }
-    return res;
+    return {data:res,isactive:isActive};
    }
 //#################################################################################################
   static async _reqHistEntityData(This,baridx)
@@ -423,7 +424,9 @@ class TDVBarCard extends HTMLElement
     let data_raw=await This._fetchRecent(This.barData[baridx].e,This.ReqStart,This.ReqEnd,false,false);
     if(data_raw&&data_raw.length&&data_raw[0]&&data_raw[0].length)
      {
-      This.barData[baridx].h=This._BuildDataArray(data_raw[0],This.StartMoment,This.CurMoment);
+      let da=This._BuildDataArray(data_raw[0],This.StartMoment,This.CurMoment);
+      This.barData[baridx].h=da.data;
+      This.barData[baridx].isempty=!da.isactive;
      }
     This.barData[baridx].fl=false;
     baridx++;
@@ -582,8 +585,8 @@ class TDVBarCard extends HTMLElement
     else bar_x=x+this.metric.iconwidth+this.metric.padding;
     let bar_yoffset=this.metric.nameheight;//Math.trunc(height/2);
 
-    // Actual bar data
-    if(entity.d>0&&this._tracker.bar_id!=baridx&&entity.ap!=null)
+    // Actual bar data  (draw animation only if the data is not tracked)
+    if(entity.d>0&&/*this._tracker.bar_id!=baridx*/this._tracker.hist_offset==null&&entity.ap!=null)
      {
       let dp=this._getPos(entity.d,width-bar_x-1);
       if(dp>4) 
@@ -659,7 +662,17 @@ class TDVBarCard extends HTMLElement
       this.ctx.fillText(curvalstr,width+.5,y+3);
      }
     // Tracked value
+    let trval;
     if(this._tracker.data!=null&&this._tracker.data>0&&this._tracker.bar_id!=null&&this._tracker.bar_id==baridx&&(this.trackingmode==1||this.trackingmode==3))
+     {
+      trval=Number(this._tracker.data);
+     }
+    else if(this._tracker.hist_offset!=null&&this.trackingmode==4)
+     {
+      trval=Number(this._getBarHistData(baridx,this._tracker.hist_offset));
+     }
+
+    if(trval&&trval>0)
      {
       let curvalstr="";
       switch(this.trackingvalue)
@@ -670,16 +683,18 @@ class TDVBarCard extends HTMLElement
         default:    curvalstr="⇑ ";break;
        }  
 
-      curvalstr+=Number(this._tracker.data).toFixed(1)+" "+entity.m+" / ";
+      curvalstr+=trval.toFixed(1)+" "+entity.m+" / ";
       tvalstrwidth=this.ctx.measureText(curvalstr).width;
       this.ctx.fillStyle=this.colors.chart_fg;
       this.ctx.textAlign="end"; 
       this.ctx.fillText(curvalstr,width+.5-valstrwidth,y+3);
+
      }
 
 
+//console.log(entity.isempty)
     // Name
-    this.ctx.fillStyle=this.colors.name;
+    this.ctx.fillStyle=(entity.isempty==true)?this.colors.bar_frame:this.colors.name;
     this.ctx.textAlign="start"; 
     this.ctx.fillText(entity.t,bar_x,y+3,(width-bar_x+.5)-(valstrwidth+tvalstrwidth+this.metric.padding));
 
@@ -694,6 +709,15 @@ class TDVBarCard extends HTMLElement
      {
       this.ctx.fillStyle=this.colors.bar_tracker;
       this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(this._tracker.data,width-bar_x-1),height-bar_yoffset-.5,3,true,true);
+     }
+    else if(this._tracker.hist_offset!=null&&this.trackingmode==4)
+     {
+      let d=this._getBarHistData(baridx,this._tracker.hist_offset);
+      if(d!=null&&d>0)
+       {
+        this.ctx.fillStyle=this.colors.bar_tracker;
+        this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(d,width-bar_x-1),height-bar_yoffset-.5,3,true,true);
+       }
      }
 
     // Draw grid block
@@ -767,7 +791,7 @@ class TDVBarCard extends HTMLElement
       this._drawBarItem(this.metric.padding+.5,r_y+.5,this.size_w-(this.metric.padding+1),Math.round(this.metric.bar_h)-(this.metric.padding+.5),this.barData[e],e);
       y+=this.metric.bar_h;
      }
-    if(this.histmode>0&&this._tracker.hist_offset!=null&&(this.trackingmode==2||this.trackingmode==3))
+    if(this.histmode>0&&this._tracker.hist_offset!=null&&this.trackingmode>=2)
      {
       this.ctx.lineWidth=1;
       this.ctx.setLineDash([2,2]);
