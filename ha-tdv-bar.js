@@ -1,4 +1,4 @@
-console.info("%c v1.1.7 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.2.0 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 class TDVBarCard extends HTMLElement
  {

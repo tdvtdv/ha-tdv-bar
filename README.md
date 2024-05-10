@@ -23,6 +23,7 @@ HACS is a third party community store and is not included in Home Assistant out 
 4. Refresh your browser
 
 
+
 ## Options
 
 | Name               | Type    | Requirement  | Default             | Description                                 |
@@ -77,6 +78,7 @@ rangemax: 2500
 histmode: 1
 trackingmode: 4
 trackingvalue: max
+allownegativescale: 0
 entities:
   - entity: sensor.energomonitor_power
     icon: mdi:power-standby
