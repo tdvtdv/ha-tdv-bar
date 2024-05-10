@@ -114,12 +114,12 @@ class TDVBarCard extends HTMLElement
       // Calc bar height
       if(this.barData.length) this.metric.bar_h=(this.size_h-this.metric.padding)/this.barData.length;
       //-------------------------------------------------------------------------------------------
-      this.cfghistmode=this.config.histmode??1;             //0-hide 1-normal
-      this.histmode=this.cfghistmode;                       //!!! This variable can be overwritten if the width of the widget is insufficient
-      this.trackingmode=Number(this.config.trackingmode??1);//0-disable 1-bar only 2-history 3-bar and history 4-all bars and history  
-      this.trackingvalue=this.config.trackingvalue??"max";  //min, avg, max
-      this.animation=Number(this.config.animation??1);      //0-disable 1-enable
-
+      this.cfghistmode=this.config.histmode??1;                          //0-hide 1-normal
+      this.histmode=this.cfghistmode;                                    //!!! This variable can be overwritten if the width of the widget is insufficient
+      this.trackingmode=Number(this.config.trackingmode??1);             //0-disable 1-bar only 2-history 3-bar and history 4-all bars and history  
+      this.trackingvalue=this.config.trackingvalue??"max";               //min, avg, max
+      this.animation=Number(this.config.animation??1);                   //0-disable 1-enable
+      this.allownegativescale=Number(this.config.allownegativescale??0); //0-disable 1-enable
       // Range
       this.maxpos=this.config.rangemax>0?this.config.rangemax:2000; 
       // Convert range value to log10 scale
@@ -265,6 +265,8 @@ class TDVBarCard extends HTMLElement
       let old_d=this.barData[i].d;
       if(hass.states[this.barData[i].e])
        {
+//DEBUG
+//if(i==0) this.barData[i].d=hass.states[this.barData[i].e].state*-1; else 
         this.barData[i].d=+hass.states[this.barData[i].e].state;
         this.barData[i].t=this.barData[i].ut??(hass.states[this.barData[i].e].attributes.friendly_name??hass.states[this.barData[i].e].entity_id);
         this.barData[i].m=hass.states[this.barData[i].e].attributes.unit_of_measurement;
@@ -282,7 +284,7 @@ class TDVBarCard extends HTMLElement
        {
         let ison=false;
         if(this.barData[i].st&&hass.states[this.barData[i].st]) ison=(hass.states[this.barData[i].st].state=="on");
-        else ison=(this.barData[i].d>0);//if on/off entity state is not defined the use base state
+        else ison=(this.barData[i].d!=0);//if on/off entity state is not defined the use base state
         icon.style.color=ison?this.colors.iconon:this.colors.iconoff;
        }
      } 
@@ -323,10 +325,19 @@ class TDVBarCard extends HTMLElement
      {
       switch(this.trackingvalue)
        {
-        case "min": data=this.barData[BarIdx].h[HistIdx]?.mn;break
+        case "min":
+         {
+          if(this.allownegativescale&&this.barData[BarIdx].h[HistIdx]?.v<0) data=this.barData[BarIdx].h[HistIdx]?.mx;
+          else data=this.barData[BarIdx].h[HistIdx]?.mn;
+
+         } break
         case "avg": data=this.barData[BarIdx].h[HistIdx]?.v;break
         case "max": 
-        default:    data=this.barData[BarIdx].h[HistIdx]?.mx;break
+        default:  
+         {
+          if(this.allownegativescale&&this.barData[BarIdx].h[HistIdx]?.v<0) data=this.barData[BarIdx].h[HistIdx]?.mn;
+          else data=this.barData[BarIdx].h[HistIdx]?.mx;
+         } break
        } 
      }
     return data;
@@ -368,6 +379,8 @@ class TDVBarCard extends HTMLElement
          {
           for(;r<RawData.length&&GetPosFunc(RawData,r)<=i;r++)
            {
+//DEBUG
+//            if(isNaN(RawData[r].state)) last=null; else last=(+RawData[r].state)*-1;
             if(isNaN(RawData[r].state)) last=null; else last=+RawData[r].state;
             if(last!=null) 
              {
@@ -586,11 +599,25 @@ class TDVBarCard extends HTMLElement
     let bar_yoffset=this.metric.nameheight;//Math.trunc(height/2);
 
     // Actual bar data  (draw animation only if the data is not tracked)
-    if(entity.d>0&&/*this._tracker.bar_id!=baridx*/this._tracker.hist_offset==null&&entity.ap!=null)
+    if(entity.d!=0&&/*this._tracker.bar_id!=baridx*/this._tracker.hist_offset==null&&entity.ap!=null)
      {
-      let dp=this._getPos(entity.d,width-bar_x-1);
+      let zeroposbaroffset;
+      if(this.allownegativescale) zeroposbaroffset=Math.round((width-bar_x-1)/2); else zeroposbaroffset=0;
+
+      let dp=this._getPos(Math.abs(entity.d),(width-bar_x-1)-zeroposbaroffset);
       if(dp>4) 
        {
+        let bpx;
+        let bpw=dp-2.5;
+        if(entity.d>0)   
+         {
+          bpx=bar_x+zeroposbaroffset+1.5;
+         }
+        else if(this.allownegativescale)
+         {
+          bpx=bar_x+zeroposbaroffset+1.5-dp;
+         }
+        else return;  
 
         if(entity.ap<0.99)
          { 
@@ -602,12 +629,12 @@ class TDVBarCard extends HTMLElement
           grd.addColorStop(1,entity.bar_fg);
 
           this.ctx.fillStyle=grd;
-          this.ctx.fillRect(bar_x+1.5,y+bar_yoffset+.5,dp-2.5,height-bar_yoffset-.5);
+          this.ctx.fillRect(bpx,y+bar_yoffset+.5,bpw,height-bar_yoffset-.5);
          }
         else
          {
           this.ctx.fillStyle=entity.bar_fg;
-          this.ctx.fillRect(bar_x+1.5,y+bar_yoffset+.5,dp-2.5,height-bar_yoffset-.5);
+          this.ctx.fillRect(bpx,y+bar_yoffset+.5,bpw,height-bar_yoffset-.5);
          }
 
         // Bar grid
@@ -616,11 +643,19 @@ class TDVBarCard extends HTMLElement
         let gridstep=this.maxposraw/10;
         for(let s=gridstep;s<this.maxposraw;s+=gridstep)
          {
-          let a=this._getPos(s,width-bar_x);
+          let a=this._getPos(s,(width-bar_x)-zeroposbaroffset);
           if(a<(dp-2))
            { 
-            this.ctx.moveTo(bar_x+a,y+bar_yoffset+1);
-            this.ctx.lineTo(bar_x+a,y+height);
+            if(entity.d>0)
+             {
+              this.ctx.moveTo(bar_x+a+zeroposbaroffset,y+bar_yoffset+1);
+              this.ctx.lineTo(bar_x+a+zeroposbaroffset,y+height);
+             }
+            else if(entity.d<0&&this.allownegativescale)
+             {
+              this.ctx.moveTo(bar_x+zeroposbaroffset-a,y+bar_yoffset+1);
+              this.ctx.lineTo(bar_x+zeroposbaroffset-a,y+height);
+             } 
            }
          }
         this.ctx.stroke();
@@ -639,7 +674,7 @@ class TDVBarCard extends HTMLElement
     let chart_x=x+this.metric.iconwidth+this.metric.padding;
 
     this.ctx.strokeStyle=this.colors.bar_frame;
-    // Draw main bar and char frame
+    // Draw main bar and chart frame
     this.ctx.fillStyle=this.colors.bar_bg;//this.colors.card_bg;
     this._roundRect(bar_x,y+bar_yoffset,width-bar_x+.5, height-bar_yoffset+.5,3,true,true);
 
@@ -652,7 +687,7 @@ class TDVBarCard extends HTMLElement
     // Value
     let valstrwidth=0;
     let tvalstrwidth=0;
-    if(Number(entity.d)>0)
+    if(Number(entity.d)!=0)
      {
       // Form a string with the current value
       let curvalstr=entity.d+" "+entity.m;
@@ -663,7 +698,7 @@ class TDVBarCard extends HTMLElement
      }
     // Tracked value
     let trval;
-    if(this._tracker.data!=null&&this._tracker.data>0&&this._tracker.bar_id!=null&&this._tracker.bar_id==baridx&&(this.trackingmode==1||this.trackingmode==3))
+    if(this._tracker.data!=null&&this._tracker.data!=0&&this._tracker.bar_id!=null&&this._tracker.bar_id==baridx&&(this.trackingmode==1||this.trackingmode==3))
      {
       trval=Number(this._tracker.data);
      }
@@ -672,10 +707,18 @@ class TDVBarCard extends HTMLElement
       trval=Number(this._getBarHistData(baridx,this._tracker.hist_offset));
      }
 
-    if(trval&&trval>0)
+    if(trval&&trval!=0)
      {
       let curvalstr="";
-      switch(this.trackingvalue)
+
+      if(this.allownegativescale&&trval<0) switch(this.trackingvalue)
+       {
+        case "min": curvalstr="⇑ ";break;
+        case "avg": curvalstr="~ ";break;
+        case "max":
+        default:    curvalstr="⇓ ";break;
+       }  
+      else switch(this.trackingvalue)
        {
         case "min": curvalstr="⇓ ";break;
         case "avg": curvalstr="~ ";break;
@@ -692,31 +735,61 @@ class TDVBarCard extends HTMLElement
      }
 
 
-//console.log(entity.isempty)
     // Name
     this.ctx.fillStyle=(entity.isempty==true)?this.colors.bar_frame:this.colors.name;
     this.ctx.textAlign="start"; 
     this.ctx.fillText(entity.t,bar_x,y+3,(width-bar_x+.5)-(valstrwidth+tvalstrwidth+this.metric.padding));
 
+    let zeroposbaroffset;
+    let zeroposchartoffset;
+    if(this.allownegativescale) 
+     {
+      zeroposbaroffset=Math.round((width-bar_x-1)/2);
+      zeroposchartoffset=Math.round((height-2)/2);
+     }
+    else
+     {
+      zeroposbaroffset=0;
+      zeroposchartoffset=0;
+     }
+
     // Actual bar data
     if(entity.d>0)
      {
       this.ctx.fillStyle=entity.bar_fg;//?entity.bar_fg:this.colors.bar_fg;
-      this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(entity.d,width-bar_x-1),height-bar_yoffset-.5,3,true,true);
+      this._roundRect(bar_x+.5+zeroposbaroffset,y+bar_yoffset+.5,this._getPos(entity.d,width-bar_x-1-zeroposbaroffset),height-bar_yoffset-.5,3,true,true);
      }
+    else if(entity.d<0&&this.allownegativescale)
+     {
+      this.ctx.fillStyle=entity.bar_fg;//?entity.bar_fg:this.colors.bar_fg;
+      let w=this._getPos(Math.abs(entity.d),width-bar_x-1-zeroposbaroffset);
+      this._roundRect((bar_x+.5+zeroposbaroffset)-w,y+bar_yoffset+.5,w,height-bar_yoffset-.5,3,true,true);
+     }
+
     // Tracked bar data
-    if(this._tracker.data!=null&&this._tracker.data>0&&this._tracker.bar_id!=null&&this._tracker.bar_id==baridx&&(this.trackingmode==1||this.trackingmode==3))
+    if(this._tracker.data!=null&&this._tracker.data!=0&&this._tracker.bar_id!=null&&this._tracker.bar_id==baridx&&(this.trackingmode==1||this.trackingmode==3))
      {
       this.ctx.fillStyle=this.colors.bar_tracker;
-      this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(this._tracker.data,width-bar_x-1),height-bar_yoffset-.5,3,true,true);
+      if(this._tracker.data>0) 
+        this._roundRect(bar_x+.5+zeroposbaroffset,y+bar_yoffset+.5,this._getPos(this._tracker.data,width-bar_x-1-zeroposbaroffset),height-bar_yoffset-.5,3,true,true);
+      else if(this._tracker.data<0&&this.allownegativescale)
+       { 
+        let tbw=this._getPos(Math.abs(this._tracker.data),width-bar_x-1-zeroposbaroffset);
+        this._roundRect(bar_x+.5+zeroposbaroffset-tbw,y+bar_yoffset+.5,tbw,height-bar_yoffset-.5,3,true,true);
+       }
      }
     else if(this._tracker.hist_offset!=null&&this.trackingmode==4)
      {
       let d=this._getBarHistData(baridx,this._tracker.hist_offset);
-      if(d!=null&&d>0)
+      if(d!=null&&d!=0)
        {
         this.ctx.fillStyle=this.colors.bar_tracker;
-        this._roundRect(bar_x+.5,y+bar_yoffset+.5,this._getPos(d,width-bar_x-1),height-bar_yoffset-.5,3,true,true);
+        if(d>0) this._roundRect(bar_x+.5+zeroposbaroffset,y+bar_yoffset+.5,this._getPos(d,width-bar_x-1-zeroposbaroffset),height-bar_yoffset-.5,3,true,true);
+        else if(d<0&&this.allownegativescale)
+         {
+          let tbw=this._getPos(Math.abs(d),width-bar_x-1-zeroposbaroffset)
+          this._roundRect(bar_x+.5+zeroposbaroffset-tbw,y+bar_yoffset+.5,tbw,height-bar_yoffset-.5,3,true,true);
+         }
        }
      }
 
@@ -724,12 +797,25 @@ class TDVBarCard extends HTMLElement
     this.ctx.strokeStyle=this.colors.bar_grid;
     // Bar grid
     this.ctx.beginPath();
+
+    if(this.allownegativescale)// Draw zero line
+     {
+      this.ctx.moveTo(bar_x+zeroposbaroffset,y+bar_yoffset+1);
+      this.ctx.lineTo(bar_x+zeroposbaroffset,y+height);
+     }
     let gridstep=this.maxposraw/10;
     for(let s=gridstep;s<this.maxposraw;s+=gridstep)
      {
-      let a=this._getPos(s,width-bar_x);
-      this.ctx.moveTo(bar_x+a,y+bar_yoffset+1);
-      this.ctx.lineTo(bar_x+a,y+height);
+      let a=this._getPos(s,width-bar_x-zeroposbaroffset);
+      // Draw positive scale grid 
+      this.ctx.moveTo(bar_x+zeroposbaroffset+a,y+bar_yoffset+1);
+      this.ctx.lineTo(bar_x+zeroposbaroffset+a,y+height);
+      // Draw negative scale grid 
+      if(this.allownegativescale)
+       {
+        this.ctx.moveTo(bar_x+zeroposbaroffset-a,y+bar_yoffset+1);
+        this.ctx.lineTo(bar_x+zeroposbaroffset-a,y+height);
+       }
      }
     this.ctx.stroke();
 
@@ -742,27 +828,46 @@ class TDVBarCard extends HTMLElement
        {
         if(entity.h[i]&&entity.h[i].mx)
          {
-          let a=this._getPos(entity.h[i].mx,height-2);
-          this.ctx.moveTo(chart_x+i+1,y+height);
-          this.ctx.lineTo(chart_x+i+1,(y+height-a));
+          this.ctx.moveTo(chart_x+i+1,y+height-zeroposchartoffset);
+          if(entity.h[i].v>0)
+           {
+            let a=this._getPos(Math.abs(entity.h[i].mx),height-2-zeroposchartoffset);
+            this.ctx.lineTo(chart_x+i+1,(y+(height-zeroposchartoffset)-a));
+           } 
+          else if(this.allownegativescale)
+           {
+            let a=this._getPos(Math.abs(entity.h[i].mn),height-2-zeroposchartoffset);
+            this.ctx.lineTo(chart_x+i+1,(y+(height-zeroposchartoffset)+a));
+           }
          }
        }
       this.ctx.stroke();
 
       this.ctx.strokeStyle=this.colors.chart_fg;
-//      this.ctx.fillStyle=this.colors.chart_fg;
       this.ctx.beginPath();
       for(let i=0;i<entity.h.length;i++)
        {
         if(entity.h[i]&&entity.h[i].v)
          {
-          let a=this._getPos(entity.h[i].v,height-2);
-          this.ctx.moveTo(chart_x+i+1,y+height);
-          this.ctx.lineTo(chart_x+i+1,(y+height-a));
-//          this.ctx.fillRect(chart_x+i+1-.5,(y+height-a),1,1);
+          this.ctx.moveTo(chart_x+i+1,y+height-zeroposchartoffset);
+          let a=this._getPos(Math.abs(entity.h[i].v),height-2-zeroposchartoffset);
+          if(entity.h[i].v>0) this.ctx.lineTo(chart_x+i+1,(y+(height-zeroposchartoffset)-a));
+          else if(this.allownegativescale) this.ctx.lineTo(chart_x+i+1,(y+(height-zeroposchartoffset)+a));
          }
        }
       this.ctx.stroke();
+
+      // Draw zero line
+      if(this.allownegativescale)
+       {
+        this.ctx.strokeStyle=this.colors.bar_frame;
+        this.ctx.beginPath();
+        this.ctx.moveTo(chart_x+1,y+height-zeroposchartoffset+.5);
+        this.ctx.lineTo(chart_x+1+this.metric.chartwidth,y+height-zeroposchartoffset+.5);
+        this.ctx.stroke();
+       }
+
+
      }
     else if(this.histmode>0)
      {
