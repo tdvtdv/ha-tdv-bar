@@ -1,4 +1,4 @@
-console.info("%c v1.2.0 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.2.1 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 class TDVBarCard extends HTMLElement
  {
@@ -73,8 +73,10 @@ class TDVBarCard extends HTMLElement
         let a=Array.isArray(this.config.entities)?this.config.entities:[this.config.entities];
         for(let i in a) 
          {
-          let bdata={ap:null,fl:false,ut:a[i].name??"",t:"",m:"",e:a[i].entity,i:a[i].icon,d:0,h:null,st:a[i].state??null,bar_fg:a[i].barcolor??this.colors.bar_fg};
-             
+          let bdata={ap:null,fl:false,ut:a[i].name??"",t:"",m:"",e:a[i].entity,i:a[i].icon,d:0,h:null,st:a[i].state??null,bar_fg:a[i].barcolor??this.colors.bar_fg,pr:0};
+
+          if(this._hass.entities[bdata.e]) bdata.pr=this._hass.entities[bdata.e].display_precision??bdata.pr;
+
           if(!bdata.ut&&this._hass.entities[a[i]?.entity]?.device_id)
            {
             bdata.ut=this._hass.devices[this._hass.entities[a[i].entity].device_id].name;
@@ -96,7 +98,8 @@ class TDVBarCard extends HTMLElement
           bdata.bar_fg_a=this._hslToRgb(hsl[0],hsl[1],newlightness/*Math.max(Math.min(this._hass.themes.darkMode?hsl[2]+.15:hsl[2]-.15,1),0)*/);
           this.barData.push(bdata);  
          }
-        //ap-animation pos. fl-Load flag  ut-user name e-entity i-icon d-cur.data h-hist.data st-entity on/off bar_fg-bar color  bar_fg_a-bar animation color 
+        //ap-animation pos. fl-Load flag  ut-user name e-entity i-icon d-cur.data h-hist.data st-entity on/off bar_fg-bar color  bar_fg_a-bar animation color
+        //pr-precision 
 
        }
       //-------------------------------------------------------------------------------------------
@@ -265,6 +268,8 @@ class TDVBarCard extends HTMLElement
       let old_d=this.barData[i].d;
       if(hass.states[this.barData[i].e])
        {
+        //TODO: Refresh precision data
+
 //DEBUG
 //if(i==0) this.barData[i].d=hass.states[this.barData[i].e].state*-1; else 
         this.barData[i].d=+hass.states[this.barData[i].e].state;
@@ -690,7 +695,7 @@ class TDVBarCard extends HTMLElement
     if(Number(entity.d)!=0)
      {
       // Form a string with the current value
-      let curvalstr=entity.d+" "+entity.m;
+      let curvalstr=Number(entity.d.toFixed(entity.pr))+" "+entity.m;
       valstrwidth=this.ctx.measureText(curvalstr).width;
       this.ctx.fillStyle=this.colors.name;
       this.ctx.textAlign="end"; 
@@ -726,7 +731,7 @@ class TDVBarCard extends HTMLElement
         default:    curvalstr="⇑ ";break;
        }  
 
-      curvalstr+=trval.toFixed(1)+" "+entity.m+" / ";
+      curvalstr+=Number(trval.toFixed(entity.pr))+" "+entity.m+" / ";
       tvalstrwidth=this.ctx.measureText(curvalstr).width;
       this.ctx.fillStyle=this.colors.chart_fg;
       this.ctx.textAlign="end"; 
