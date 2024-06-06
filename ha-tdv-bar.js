@@ -1,4 +1,9 @@
-console.info("%c v1.2.1 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.2.2 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+
+//const LitElement = customElements.get("ha-panel-lovelace") ? Object.getPrototypeOf(customElements.get("ha-panel-lovelace")) : Object.getPrototypeOf(customElements.get("hc-lovelace"));
+//const html = LitElement.prototype.html;
+//const css = LitElement.prototype.css;
+//debugger
 
 class TDVBarCard extends HTMLElement
  {
@@ -37,9 +42,12 @@ class TDVBarCard extends HTMLElement
 
       //-------------------------------------------------------------------------------------------
       // Define color constant
+
       this._compStyle=getComputedStyle(document.getElementsByTagName('body')[0]);
+
       this.fonts={}
-      this.fonts.name=this._compStyle.getPropertyValue("--paper-font-body1_-_font-size")+" "+this._compStyle.getPropertyValue("--paper-font-body1_-_font-family"); 
+//      this.fonts.name=this._compStyle.getPropertyValue("--paper-font-body1_-_font-size")+" "+this._compStyle.getPropertyValue("--paper-font-body1_-_font-family"); 
+      this.fonts.size="14px";
 
       this._rebuildColorValue();
 
@@ -106,10 +114,10 @@ class TDVBarCard extends HTMLElement
       // Define metrics
       this.metric={hist_offset:null,data:null,bar_id:null}
       this.metric.padding=10;
-      this.metric.iconsize=parseInt(this._compStyle.getPropertyValue("--paper-font-headline_-_font-size"));//24;//  style.getPropertyValue("--mdc-icon-size");
+      this.metric.iconsize=24;//parseInt(this._compStyle.getPropertyValue("--paper-font-headline_-_font-size"));//24;//  style.getPropertyValue("--mdc-icon-size");
       this.metric.iconwidth=this.metric.iconsize;
       this.metric.chartwidth=146;
-      this.metric.nameheight=parseFloat(this._compStyle.getPropertyValue("--paper-font-body1_-_font-size"))+7;
+      this.metric.nameheight=parseFloat(this.fonts.size)+7;//parseFloat(this._compStyle.getPropertyValue("--paper-font-body1_-_font-size"))+7;
 
       this.size_w = Math.max(this.config.width??300,this.offsetWidth);
       this.size_h = Math.max(this.config.height??(this.barData.length>0?this.barData.length*(this.metric.iconsize*2):200),this.offsetHeight)+this.metric.padding;
@@ -155,6 +163,7 @@ class TDVBarCard extends HTMLElement
 
       this.canvas=this.querySelector("canvas");
       this.ctx=this.canvas.getContext("2d");
+
       // Calc font metric
       //this.ctx.save();
       //this.ctx.font=this.fonts.name;
@@ -242,8 +251,11 @@ class TDVBarCard extends HTMLElement
       //-------------------------------
       new ResizeObserver(rsentries=>
        {
+
         this._rebuildColorValue();
+
         this.size_w=this.offsetWidth;//this.parentElement.clientWidth-8;//this.clientWidth;
+
         this.histmode=(this.size_w<(this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2))?0:this.cfghistmode;
 
         //console.log('content dimension changed',this.clientWidth,this.clientHeight);
@@ -251,7 +263,7 @@ class TDVBarCard extends HTMLElement
         //this.Context.canvas.height=this.h;
         this._drawBarContent();
 
-       }).observe(this.getElementsByTagName('ha-card')[0]);
+       }).observe(this/*.getElementsByTagName('ha-card')[0]*/);
 
       // if some bar defined start history data requester timer
       if(this.barData.length)
@@ -688,7 +700,12 @@ class TDVBarCard extends HTMLElement
 
     // Text block
     this.ctx.textBaseline="top";//"middle"; 
-    this.ctx.font=this.fonts.name;//"14px Roboto, Noto, sans-serif "//
+    //this.ctx.font=this.fonts.name;//"14px Roboto, Noto, sans-serif "//
+
+    let fontArgs = this.ctx.font.split(' ');
+    this.ctx.font = this.fonts.size+' '+fontArgs[fontArgs.length - 1];
+
+
     // Value
     let valstrwidth=0;
     let tvalstrwidth=0;
