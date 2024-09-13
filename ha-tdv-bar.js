@@ -1,4 +1,4 @@
-console.info("%c v1.2.2 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c v1.2.3 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 //const LitElement = customElements.get("ha-panel-lovelace") ? Object.getPrototypeOf(customElements.get("ha-panel-lovelace")) : Object.getPrototypeOf(customElements.get("hc-lovelace"));
 //const html = LitElement.prototype.html;
@@ -144,7 +144,8 @@ class TDVBarCard extends HTMLElement
       //-------------------------------------------------------------------------------------------
       // Create card content
       let cnthtml=`<ha-card header="${this.config.title??''}" style="line-height:0;"><div style="position:relative;">`
-      cnthtml+=   ` <canvas class="card-content" width="${this.size_w}px" height="${this.size_h}px" tabindex="1" style="border-radius: var(--ha-card-border-radius,12px); padding:0"></canvas>`
+//      cnthtml+=   ` <canvas class="card-content" width="${this.size_w}px" height="${this.size_h}px" tabindex="1" style="border-radius: var(--ha-card-border-radius,12px); padding:0"></canvas>`
+      cnthtml+=   ` <canvas class="card-content" height="${this.size_h}px" tabindex="1" style="width:100%; border-radius: var(--ha-card-border-radius,12px); padding:0"></canvas>`
 
       // Add icon element
       for(let i in this.barData)
@@ -163,6 +164,10 @@ class TDVBarCard extends HTMLElement
 
       this.canvas=this.querySelector("canvas");
       this.ctx=this.canvas.getContext("2d");
+
+      this.size_w=this.ctx.canvas.clientWidth;
+      this.size_h=this.ctx.canvas.clientHeight;
+
 
       // Calc font metric
       //this.ctx.save();
@@ -249,12 +254,15 @@ class TDVBarCard extends HTMLElement
         this._drawBarContent();
        };
       //-------------------------------
+
       new ResizeObserver(rsentries=>
        {
 
         this._rebuildColorValue();
 
-        this.size_w=this.offsetWidth;//this.parentElement.clientWidth-8;//this.clientWidth;
+//        this.size_w=this.offsetWidth;//this.parentElement.clientWidth-8;//this.clientWidth;
+        this.size_w=this.ctx.canvas.clientWidth;
+        this.size_h=this.ctx.canvas.clientHeight;
 
         this.histmode=(this.size_w<(this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2))?0:this.cfghistmode;
 
@@ -265,11 +273,13 @@ class TDVBarCard extends HTMLElement
 
        }).observe(this/*.getElementsByTagName('ha-card')[0]*/);
 
+
+
       // if some bar defined start history data requester timer
       if(this.barData.length)
        {
         if(this.histmode>0) setTimeout(TDVBarCard._reqHistEntityData,100,this,0);
-      }
+       }
 
      }
     //----------------------------------
@@ -904,6 +914,16 @@ class TDVBarCard extends HTMLElement
 //#################################################################################################
   _drawBarContent()
    {
+/*
+    // attempt fix widget width detection 
+    if(this.size_w!=this.offsetWidth) 
+     {
+      this._rebuildColorValue();
+      this.size_w=this.offsetWidth;
+      this.histmode=(this.size_w<(this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2))?0:this.cfghistmode;
+      this.canvas.width=this.size_w-2;
+     }
+*/
     //this._rebuildColorValue();
     this.ctx.clearRect(0, 0,this.size_w,this.size_h);
 
