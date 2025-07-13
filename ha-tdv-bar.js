@@ -1,375 +1,526 @@
-console.info("%c v1.2.3 %c TDV-BAR-CARD ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c TDV-BAR-CARD %c v2.0 ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
-//const LitElement = customElements.get("ha-panel-lovelace") ? Object.getPrototypeOf(customElements.get("ha-panel-lovelace")) : Object.getPrototypeOf(customElements.get("hc-lovelace"));
-//const html = LitElement.prototype.html;
-//const css = LitElement.prototype.css;
-//debugger
+const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace"));
+const html = LitElement.prototype.html;
+const css = LitElement.prototype.css;
 
-class TDVBarCard extends HTMLElement
+class TDVBarCard extends LitElement//HTMLElement
  {
-//#################################################################################################  
+  static LocStr=
+   {
+    _isinited: false,
+    nodata:  "No data",
+    loading: "Loading",
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  constructor()
+   {
+    super();
+    this._Runtime=null;
+    this._Entities=[];
+    this._IsInited=false;
+    this._broadcast=new BroadcastChannel("tdv-barv2");
+    this._msecperday=86400000;        // msec per day
+    this._scale=this._msecperday/144;
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  static get styles()
+   { 
+    return css`
+     .error                   {color: var(--error-color) !important;} 
+     .muted                   {opacity: 0.2;}
+     table                    {border: 0px solid red; border-collapse: collapse; margin: 10px auto 16px auto; width:calc(100% - 28px); }
+     table.removetopmargin    {margin-top:0;}
+     table .iconplace         {border: 0px solid green; width: 0; align:center;vertical-align:middle; margin:0;padding-right: 14px;}
+     table .titleplace        
+      {
+       position: relative;
+       white-space: nowrap;
+       overflow: hidden; 
+       max-width: 15px;
+      }
+     table .titleplace .tooltip
+      {
+       color: var(--mdc-theme-primary);
+      }
+     table .titleplace .tooltip,
+     table .titleplace .title
+      {
+       overflow: hidden;
+       text-overflow: ellipsis;
+       position: absolute;
+      }
+     table .titleplace .measplace 
+      {
+/*
+       display: inline;
+       z-index: 1000;
+       position: absolute;
+       right: 0;
+*/
+       float: right;
+       background-color: var(--card-background-color);
+      } 
+     table .titleplace .histmeasure {padding-right: .5rem;}
+     table .chartplace        {border: 0px solid green; width: 0; align:center;vertical-align:bottom;font-size:0;}
+     table .chartplace canvas {border: 1px solid transparent;margin: 0 5px 0 0;}
+     table tbody:first-child tr .iconplace,table tbody:first-child tr .chartplace,table tbody:first-child tr .titleplace {padding-top: 5px;}
+     table tbody:not(:first-child) tr .iconplace, table tbody:not(:first-child) tr .chartplace, table tbody:not(:first-child) tr .titleplace {padding-top: 5px;}
+     table .barplace          {border: 0px solid green; width: 100%; align:center;vertical-align:bottom;font-size:0;}
+     table .bar               {border: 1px solid transparent; width:100%; height: 20px;}
+     table .grid              {stroke-linecap: square;stroke: transparent; stroke-width: 1px;visibility: hidden;}
+     table .grid.active       {visibility: visible;}
+    `;
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // The user supplied configuration. Throw an exception and Home Assistant will render an error card.
   setConfig(config)
    {
-    if(!config.entities) 
-     {
-      throw new Error("You need to define an entities");
-     }
+    if(!config.entities) throw new Error("You need to define an entity");
     this.config=config;
-   }
-//#################################################################################################
-  // The height of your card. Home Assistant uses this to automatically distribute all cards over the available columns.
-  getCardSize()
-   {
-    if(this.barData) return math.trunc((this.barData.length*this.metric.bar_h)/50);
-    else return 1; 
-   }
-//#################################################################################################
-  // Whenever the state changes, a new `hass` object is set. Use this to update your content.
-  set hass(hass)
-   {
-    this._hass=hass;
-    // Initialize the content if it's not there yet.
-    if(!this.canvas)
+    this._scaletype=String((this.config.scaletype)??"log10").toLowerCase();
+    this._allownegativescale=parseInt(this.config.allownegativescale??"0");
+    this._histmode=parseInt(this.config.histmode??"1");
+    this._defaulticon=(this.config.defaulticon)??"mdi:power";
+    this._rangemax=Number(this.config.rangemax??2000);
+    this._animation=parseInt(this.config.animation??"1");
+    this._trackingmode=parseInt(this.config.trackingmode??"1");
+
+    this._color=
      {
-      this._anTimerId=null;  //Animation timer id 
-      this._anStart=performance.now();
+      chart_bg:  this.config?.colors?.chart_bg||"var(--card-background-color)",
+      chart_fg:  this.config?.colors?.chart||"var(--mdc-theme-secondary)",
+      bar_bg:    this.config?.colors?.bar_bg||"var(--card-background-color)",
+      bar:       this.config?.colors?.bar||"var(--mdc-theme-primary)",
+      frame:     this.config?.colors?.frame||"var(--divider-color)",
+      fontcolor: this.config?.colors?.fontcolor||"var(--text-primary-color)",
+      iconoff:   "var(--mdc-theme-text-icon-on-background)",
+      iconon:    "var(--mdc-theme-secondary)",
+      tracker:   "var(--mdc-theme-primary)", //--state-device_tracker-active-color
+      chart_fghalf: 0,
+     }
+    this._colorctx={}
 
-      this._tracker={};
-      this._broadcast=new BroadcastChannel("tdv-bar");
-      this._msecperday=86400000;// msec per day
-      this._scale=this._msecperday/146;
 
-      //-------------------------------------------------------------------------------------------
-      // Define color constant
+    this._namepriority=parseInt(this.config.namepriority??"0");   //0-device name   1-entity name 2-friendly name
 
-      this._compStyle=getComputedStyle(document.getElementsByTagName('body')[0]);
-
-      this.fonts={}
-//      this.fonts.name=this._compStyle.getPropertyValue("--paper-font-body1_-_font-size")+" "+this._compStyle.getPropertyValue("--paper-font-body1_-_font-family"); 
-      this.fonts.size="14px";
-
-      this._rebuildColorValue();
-
-      this.barData=[];
-   
-      // Check config for generate preview card
-      if(this.config.entities&&Array.isArray(this.config.entities)&&this.config.entities.length==1&&this.config.entities[0].entity&&this.config.entities[0].entity=="<enter base entity name>")
+    // Prepare entities 
+    let a;
+    if(Array.isArray(this.config.entities)) a=this.config.entities; else a=[this.config.entities];
+    a.forEach((e,i)=>
+     {
+      this._Entities[i]=
        {
-        // Create full the object copy for prevent use preview configuration
-        this.config=JSON.parse(JSON.stringify(this.config));
-
-        this.config.title=null;
-        this.config.entities=[];
-        for(let i in this._hass.states)
-         {
-          if(i.startsWith("sensor.")&&i.endsWith("_power"))
-           {
-            //console.log(i);
-            //console.dir(this._hass.states[i]);
-            if(this.config.entities.push({entity:i,icon:"mdi:power",name:this._hass.states[i].attributes.friendly_name})>3) break;
-           }
-         }
-
+        entity:    e.entity,
+        icon:      e.icon||this._defaulticon,
+        name:      e.name||null, 
+        meas:      "",
+        precision: 0,
+        state:     e.state||null,
+        barcolor:  e.barcolor||this._color.bar,
+        rangemax:  Number(e.rangemax||this._rangemax),
        }
+     });
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  render()
+   {//background-color: ${this._color.chart_bg}                                        style="dispaly:none;"
+    return html`<ha-card header="${this.config.title}"><table class="card-content ${this.config.title?'removetopmargin':''}">${this._Entities.map((e,i)=> html`
+     <tbody id="item${i}" data-idx="${i}" @click=${this._pressItem} style="color: ${this._color.fontcolor}">
+      <tr>
+       <td rowspan="2" class="iconplace" data-idx="${i}" @click=${this._pressIcon}><ha-icon icon="${e.icon}" style="cursor:pointer;"></td>
+       ${this._histmode?html`<td rowspan="2" class="chartplace"><canvas height="40" width="145" style="border-color:${this._color.frame};"></canvas></td>`:""}
+       <td class="titleplace"><span class="title">${e.name}</span><span class="tooltip"></span> <span class="measplace"><span class="histmeasure" style="color:${this._color.chart_fg};"></span><span class="measure"></span></span></td>
+      </tr>
+      <tr>
+       <td class="barplace">
+        <svg id="b${i}" class="bar" style="border-color:${this._color.frame}; background-color: ${this._color.bar_bg};">
+         <defs>
+           <linearGradient id="gradient${i}" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="${e.barcolor}"><animate attributeName="offset" lr-from="-1"   lr-to="1"   rl-from="1"   rl-to="-1"   dur="1s"/></stop>
+            <stop offset="0%" stop-color="#ffffff">      <animate attributeName="offset" lr-from="-0.5" lr-to="1.5" rl-from="1.5" rl-to="-0.5" dur="1s"/></stop>
+            <stop offset="0%" stop-color="${e.barcolor}"><animate attributeName="offset" lr-from="0"    lr-to="2"   rl-from="2"   rl-to="0"    dur="1s"/></stop>
+           </linearGradient>
+           <mask id="waveMask${i}"><rect x="0" y="0" width="100%" height="100%" fill="url(#gradient${i})" opacity="1"/></mask>
+         </defs>
+         <rect id="r${i}" x="${this._allownegativescale?50:0}%" y="0" ry="25%" width="0%" height="100%" fill="${e.barcolor}" mask="url(#waveMask${i})"/>
+         <rect id="hr${i}" x="${this._allownegativescale?50:0}%" y="0" ry="25%" width="0%" height="100%" fill="var(--mdc-theme-secondary)" opacity=".5"/>
+         <g class="grid ${this._scaletype=='linear'&&this._allownegativescale==0?"active":""}" style="stroke:${this._color.frame}">
+          <line x1="10%" y1="0" x2="10%" y2="100%" /><line x1="20%" y1="0" x2="20%" y2="100%" /><line x1="30%" y1="0" x2="30%" y2="100%" />
+          <line x1="40%" y1="0" x2="40%" y2="100%" /><line x1="50%" y1="0" x2="50%" y2="100%" /><line x1="60%" y1="0" x2="60%" y2="100%" />
+          <line x1="70%" y1="0" x2="70%" y2="100%" /><line x1="80%" y1="0" x2="80%" y2="100%" /><line x1="90%" y1="0" x2="90%" y2="100%" />
+         </g>
+         <g class="grid ${this._scaletype=='log10'&&this._allownegativescale==0?"active":""}" style="stroke:${this._color.frame}">
+          <line x1="50.0%" y1="0" x2="50.0%" y2="100%" /><line x1="65.0%" y1="0" x2="65.0%" y2="100%" /><line x1="73.8%" y1="0" x2="73.8%" y2="100%" />
+          <line x1="80.1%" y1="0" x2="80.1%" y2="100%" /><line x1="84.9%" y1="0" x2="84.9%" y2="100%" /><line x1="88.9%" y1="0" x2="88.9%" y2="100%" />
+          <line x1="92.2%" y1="0" x2="92.2%" y2="100%" /><line x1="95.1%" y1="0" x2="95.1%" y2="100%" /><line x1="97.7%" y1="0" x2="97.7%" y2="100%" />
+         </g>
+         <g class="grid ${this._scaletype=='linear'&&this._allownegativescale==1?"active":""}" style="stroke:${this._color.frame}">
+          <line x1=" 5%" y1="0" x2=" 5%" y2="100%" /><line x1="10%" y1="0" x2="10%" y2="100%" /><line x1="15%" y1="0" x2="15%" y2="100%" />
+          <line x1="20%" y1="0" x2="20%" y2="100%" /><line x1="25%" y1="0" x2="25%" y2="100%" /><line x1="30%" y1="0" x2="30%" y2="100%" />
+          <line x1="35%" y1="0" x2="35%" y2="100%" /><line x1="40%" y1="0" x2="40%" y2="100%" /><line x1="45%" y1="0" x2="45%" y2="100%" />
+          <line x1="50%" y1="0" x2="50%" y2="100%" />
+          <line x1="55%" y1="0" x2="55%" y2="100%" /><line x1="60%" y1="0" x2="60%" y2="100%" /><line x1="65%" y1="0" x2="65%" y2="100%" />
+          <line x1="70%" y1="0" x2="70%" y2="100%" /><line x1="75%" y1="0" x2="75%" y2="100%" /><line x1="80%" y1="0" x2="80%" y2="100%" />
+          <line x1="85%" y1="0" x2="85%" y2="100%" /><line x1="90%" y1="0" x2="90%" y2="100%" /><line x1="95%" y1="0" x2="95%" y2="100%" />
+         </g>
+         <g class="grid ${this._scaletype=='log10'&&this._allownegativescale==1?"active":""}" style="stroke:${this._color.frame}">
+          <line x1=" 1.1%" y1="0" x2=" 1.1%" y2="100%" /><line x1=" 2.4%" y1="0" x2=" 2.4%" y2="100%" /><line x1=" 3.8%" y1="0" x2=" 3.8%" y2="100%" />
+          <line x1=" 5.5%" y1="0" x2=" 5.5%" y2="100%" /><line x1=" 7.5%" y1="0" x2=" 7.5%" y2="100%" /><line x1=" 9.9%" y1="0" x2=" 9.9%" y2="100%" />
+          <line x1="13.0%" y1="0" x2="13.0%" y2="100%" /><line x1="17.4%" y1="0" x2="17.4%" y2="100%" /><line x1="25.0%" y1="0" x2="25.0%" y2="100%" />
+          <line x1="50%" y1="0" x2="50%" y2="100%" />
+          <line x1="75.0%" y1="0" x2="75.0%" y2="100%" /><line x1="82.5%" y1="0" x2="82.5%" y2="100%" /><line x1="86.9%" y1="0" x2="86.9%" y2="100%" />
+          <line x1="90.0%" y1="0" x2="90.0%" y2="100%" /><line x1="92.4%" y1="0" x2="92.4%" y2="100%" /><line x1="94.4%" y1="0" x2="94.4%" y2="100%" />
+          <line x1="96.1%" y1="0" x2="96.1%" y2="100%" /><line x1="97.5%" y1="0" x2="97.5%" y2="100%" /><line x1="98.8%" y1="0" x2="98.8%" y2="100%" />
+         </g>
+        </svg>
+       </td>
+      </tr>
+     </tbody>`)}</table></ha-card>`;
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  firstUpdated()
+   {
 
-
-      if(this.config.entities)
-       {
-        // Prepare entity array
-
-        let a=Array.isArray(this.config.entities)?this.config.entities:[this.config.entities];
-        for(let i in a) 
-         {
-          let bdata={ap:null,fl:false,ut:a[i].name??"",t:"",m:"",e:a[i].entity,i:a[i].icon,d:0,h:null,st:a[i].state??null,bar_fg:a[i].barcolor??this.colors.bar_fg,pr:0};
-
-          if(this._hass.entities[bdata.e]) bdata.pr=this._hass.entities[bdata.e].display_precision??bdata.pr;
-
-          if(!bdata.ut&&this._hass.entities[a[i]?.entity]?.device_id)
-           {
-            bdata.ut=this._hass.devices[this._hass.entities[a[i].entity].device_id].name;
-           }
-
-          if(!bdata.i)
-           {
-            bdata.i=this._hass.entities[a[i].entity]?.icon;
-            if(!bdata.i) bdata.i=this._hass.states[a[i].entity]?.attributes?.icon;
-            if(!bdata.i) bdata.i=this.config.defaulticon??"mdi:power";
-           }
-
-          // Creating an array of colors for animation
-          let hsl=this._rgbToHsl(bdata.bar_fg);
-          let level=hsl[2]/100*50;
-          let newlightness=hsl[2]+level;
-          if(/*newlightness>1*/hsl[2]>=0.5) newlightness=hsl[2]-level;
-
-          bdata.bar_fg_a=this._hslToRgb(hsl[0],hsl[1],newlightness/*Math.max(Math.min(this._hass.themes.darkMode?hsl[2]+.15:hsl[2]-.15,1),0)*/);
-          this.barData.push(bdata);  
-         }
-        //ap-animation pos. fl-Load flag  ut-user name e-entity i-icon d-cur.data h-hist.data st-entity on/off bar_fg-bar color  bar_fg_a-bar animation color
-        //pr-precision 
-
+    //Convert a css color variable to a regular web format color (for canvas use only)
+    let compStyle=getComputedStyle(document.getElementsByTagName('body')[0]);
+    for(let c in this._color)
+     {
+      if(this._color[c]&&this._color[c].trim().startsWith("var("))
+       { 
+        const match = this._color[c].match(/var\((.*?)\)/);
+        if(match) this._colorctx[c]=compStyle.getPropertyValue(match[1]);
        }
-      //-------------------------------------------------------------------------------------------
-      // Define metrics
-      this.metric={hist_offset:null,data:null,bar_id:null}
-      this.metric.padding=10;
-      this.metric.iconsize=24;//parseInt(this._compStyle.getPropertyValue("--paper-font-headline_-_font-size"));//24;//  style.getPropertyValue("--mdc-icon-size");
-      this.metric.iconwidth=this.metric.iconsize;
-      this.metric.chartwidth=146;
-      this.metric.nameheight=parseFloat(this.fonts.size)+7;//parseFloat(this._compStyle.getPropertyValue("--paper-font-body1_-_font-size"))+7;
+      else this._colorctx[c]=this._color[c];
+     }
 
-      this.size_w = Math.max(this.config.width??300,this.offsetWidth);
-      this.size_h = Math.max(this.config.height??(this.barData.length>0?this.barData.length*(this.metric.iconsize*2):200),this.offsetHeight)+this.metric.padding;
+    let hsl=this._rgbval(this._colorctx.chart_fg);
+    this._color.chart_fghalf=this._colorctx.chart_fghalf=`rgba(${hsl[0]},${hsl[1]},${hsl[2]},.5)`;
 
-      // Calc bar height
-      if(this.barData.length) this.metric.bar_h=(this.size_h-this.metric.padding)/this.barData.length;
-      //-------------------------------------------------------------------------------------------
-      this.cfghistmode=this.config.histmode??1;                          //0-hide 1-normal
-      this.histmode=this.cfghistmode;                                    //!!! This variable can be overwritten if the width of the widget is insufficient
-      this.trackingmode=Number(this.config.trackingmode??1);             //0-disable 1-bar only 2-history 3-bar and history 4-all bars and history  
-      this.trackingvalue=this.config.trackingvalue??"max";               //min, avg, max
-      this.animation=Number(this.config.animation??1);                   //0-disable 1-enable
-      this.allownegativescale=Number(this.config.allownegativescale??0); //0-disable 1-enable
-      // Range
-      this.maxpos=this.config.rangemax>0?this.config.rangemax:2000; 
-      // Convert range value to log10 scale
-      this.maxposraw=this.maxpos;
-
-      switch(this.config.scaletype?this.config.scaletype.toLowerCase():"log10")
+    // Preparation of runtime data
+    this._Runtime=[]; //this._Entities   this.config.entities
+    this._Entities.forEach((e,i)=>
+     {
+      this._Runtime[i]=
        {
-        case "linear": break;
-        case "log10": this.maxpos=Math.log10(this.maxpos);break;
-       } 
-      //-------------------------------------------------------------------------------------------
-      // Create card content
-      let cnthtml=`<ha-card header="${this.config.title??''}" style="line-height:0;"><div style="position:relative;">`
-//      cnthtml+=   ` <canvas class="card-content" width="${this.size_w}px" height="${this.size_h}px" tabindex="1" style="border-radius: var(--ha-card-border-radius,12px); padding:0"></canvas>`
-      cnthtml+=   ` <canvas class="card-content" height="${this.size_h}px" tabindex="1" style="width:100%; border-radius: var(--ha-card-border-radius,12px); padding:0"></canvas>`
+        base:    this.shadowRoot.querySelector(`#item${i}`),
+        icon:    this.shadowRoot.querySelector(`#item${i} .iconplace ha-icon`),
+        title:   this.shadowRoot.querySelector(`#item${i} .title`),
+        tooltip: this.shadowRoot.querySelector(`#item${i} .tooltip`),
+        bar:     this.shadowRoot.querySelector(`#r${i}`),
+        histbar: this.shadowRoot.querySelector(`#hr${i}`),
+        anim:    this.shadowRoot.querySelectorAll(`#b${i}.bar animate`),
+        measure: this.shadowRoot.querySelector(`#item${i} .measure`),
+        histmeasure: this.shadowRoot.querySelector(`#item${i} .histmeasure`),
+        canvas:  this.shadowRoot.querySelector(`#item${i} canvas`),
+        ctx:     null,
+        w:       null,   // canvas context
+        h:       null,   //     size
+        isTrc:   false,  // Active tracking
+        trPos:   -1,     // Tracking position ( if>=0 )
 
-      // Add icon element
-      for(let i in this.barData)
+        val:     0,    //For change control
+       };
+      this._Runtime[i].tooltip.style.display="none";
+      if(this._histmode)
        {
-        if(this.barData[i].i)
+        this._Runtime[i].ctx=this._Runtime[i].canvas.getContext("2d");
+        this._Runtime[i].ctx.textRendering="geometricPrecision";
+        this._Runtime[i].w=this._Runtime[i].ctx.canvas.width;
+        this._Runtime[i].h=this._Runtime[i].ctx.canvas.height;
+
+        this._Runtime[i].canvas.addEventListener("mouseleave",(ev)=>
          {
-          let edata="";
-          if(this.barData[i].st) edata='data-entity="'+this.barData[i].st+'"';
-          //cnthtml+=`<ha-icon id="tdvbar_${i}" icon="${this.barData[i].i}" ${edata} style="${edata?"cursor:pointer;":""} position: absolute; left:${this.metric.padding}px; top:${this.metric.bar_h*i+this.metric.padding+9/*+((this.metric.bar_h-this.metric.iconsize)/2)*/}px;"></ha-icon>`;
-          cnthtml+=`<ha-icon id="tdvbar_${i}" icon="${this.barData[i].i}" ${edata} style="${edata?"cursor:pointer;":""} position: absolute; left:${this.metric.padding}px; top:${this.metric.bar_h*i+this.metric.padding+(((this.metric.bar_h-this.metric.padding)-this.metric.iconsize)/2)}px;"></ha-icon>`;//+(((this.metric.bar_h-this.metric.padding)-this.metric.iconsize)/2)
-         }  
-       } 
-
-      cnthtml+=   `</div></ha-card>`;
-      this.innerHTML=cnthtml;
-
-      this.canvas=this.querySelector("canvas");
-      this.ctx=this.canvas.getContext("2d");
-
-      this.size_w=this.ctx.canvas.clientWidth;
-      this.size_h=this.ctx.canvas.clientHeight;
-
-
-      // Calc font metric
-      //this.ctx.save();
-      //this.ctx.font=this.fonts.name;
-      //let m=this.ctx.measureText("AQq");
-      //this.metric.nameheight=m.fontBoundingBoxAscent+m.fontBoundingBoxDescent+5;
-      //this.ctx.restore();
-      //-------------------------------
-      // set click event handler 
-      this.querySelectorAll("ha-icon").forEach(elAnchor=>
-       {
-        elAnchor.addEventListener("click",(ev)=>
-         {
-          let e=ev.target.getAttribute("data-entity"); 
-          if(e)
-           {
-            ev.stopPropagation();
-            //hass.callService("switch", "toggle", {entity_id:e});
-            this._fire("hass-more-info", { entityId: e });
-           }
+          if(this._trackingmode){let trd={pos:null}; this._applayTrackData(trd,i); if(this._trackingmode==4) this._broadcast.postMessage(trd);}
          });
-       });
 
-      this.canvas.addEventListener("click",(ev)=>
-       {
-        ev.stopPropagation();
-        let x,y;
-        if(ev.offsetX||ev.offsetY){x=ev.offsetX;y=ev.offsetY;} else {x=ev.layerX;y=ev.layerY;} 
-        if(this.metric.bar_h&&this.barData&&this.barData.length) 
+        this._Runtime[i].canvas.addEventListener("mousemove",(ev)=>
          {
-          let itemnum=Math.trunc(y/this.metric.bar_h);
-          if(itemnum>=0&&itemnum<this.barData.length)
-           {
-            this._fire("hass-more-info", { entityId:this.barData[itemnum].e});
-           }
+          let mx,my;
+          if(ev.offsetX||ev.offsetY){mx=ev.offsetX;my=ev.offsetY;} else {mx=ev.layerX;my=ev.layerY;} 
+          if(this._trackingmode){let trd={pos:mx}; this._applayTrackData(trd,i); if(this._trackingmode==4) this._broadcast.postMessage(trd);}
+         });
+
+        this._broadcast.onmessage=(event)=>{this._applayTrackData(event.data,null);};
+
+        this._drawChartContext(i);
+       }
+
+      }); 
+
+    let hass=document.querySelector('home-assistant')?.hass;
+    if(hass) this.hass=hass;
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _rgbval(color)
+   {
+    // return an array containing R, G and B values
+    if(color === 'transparent') color = '#FFF';// IE (6 and ?)
+    let r,g,b;
+    let hex_color_pcre = new RegExp("^#[0-9a-f]{3}([0-9a-f]{3})?$",'gi');
+    let rgb_color_pcre = new RegExp("rgb\\(\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*\\)$",'gi');
+    let rgb_percent_color_pcre = new RegExp("rgb\\(\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*\\)$",'gi');
+    let rgba_color_pcre = new RegExp("rgba\\(\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*,.*\\)$",'gi');
+    let rgba_percent_color_pcre = new RegExp("rgba\\(\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,.*\\)$",'gi');
+    if(color.match(hex_color_pcre))
+     {
+      if(color.length==4){r=color.charAt(1)+""+color.charAt(1);g=color.charAt(2)+""+color.charAt(2);b=color.charAt(3)+""+color.charAt(3);}
+      else {r=color.charAt(1)+""+color.charAt(2);g=color.charAt(3)+""+color.charAt(4);b=color.charAt(5)+""+color.charAt(6);}
+      r=parseInt(r,16);g=parseInt(g,16);b=parseInt(b,16);
+     }
+    else if(color.match(rgb_color_pcre)||color.match(rgba_color_pcre)){r=+RegExp.$1;g=+RegExp.$2;b=+RegExp.$3;}
+    else if(color.match(rgb_percent_color_pcre)||color.match(rgba_percent_color_pcre)){r=parseInt((RegExp.$1)*2.55);g=parseInt((RegExp.$2)*2.55);b=parseInt((RegExp.$3)*2.55);}
+    else
+     {
+      const names=[['AliceBlue',240,248,255],['AntiqueWhite',250,235,215],['Aqua',0,255,255],['Aquamarine',127,255,212],['Azure',240,255,255],['Beige',245,245,220],['Bisque',255,228,196],['Black',0,0,0],['BlanchedAlmond',255,235,205],['Blue',0,0,255],['BlueViolet',138,43,226],['Brown',165,42,42],['BurlyWood',222,184,135],['CadetBlue',95,158,160],['Chartreuse',127,255,0],['Chocolate',210,105,30],['Coral',255,127,80],['CornflowerBlue',100,149,237],['Cornsilk',255,248,220],['Crimson',220,20,60],['Cyan',0,255,255],['DarkBlue',0,0,139],['DarkCyan',0,139,139],['DarkGoldenRod',184,134,11],['DarkGray',169,169,169],['DarkGrey',169,169,169],['DarkGreen',0,100,0],['DarkKhaki',189,183,107],['DarkMagenta',139,0,139],['DarkOliveGreen',85,107,47],['DarkOrange',255,140,0],['DarkOrchid',153,50,204],['DarkRed',139,0,0],['DarkSalmon',233,150,122],['DarkSeaGreen',143,188,143],['DarkSlateBlue',72,61,139],['DarkSlateGray',47,79,79],['DarkSlateGrey',47,79,79],['DarkTurquoise',0,206,209],['DarkViolet',148,0,211],['DeepPink',255,20,147],['DeepSkyBlue',0,191,255],['DimGray',105,105,105],['DimGrey',105,105,105],['DodgerBlue',30,144,255],['FireBrick',178,34,34],['FloralWhite',255,250,240],['ForestGreen',34,139,34],['Fuchsia',255,0,255],['Gainsboro',220,220,220],['GhostWhite',248,248,255],['Gold',255,215,0],['GoldenRod',218,165,32],['Gray',128,128,128],['Grey',128,128,128],['Green',0,128,0],['GreenYellow',173,255,47],['HoneyDew',240,255,240],['HotPink',255,105,180],['IndianRed',205,92,92],['Indigo',75,0,130],['Ivory',255,255,240],['Khaki',240,230,140],['Lavender',230,230,250],['LavenderBlush',255,240,245],['LawnGreen',124,252,0],['LemonChiffon',255,250,205],['LightBlue',173,216,230],['LightCoral',240,128,128],['LightCyan',224,255,255],['LightGoldenRodYellow',250,250,210],['LightGray',211,211,211],['LightGrey',211,211,211],['LightGreen',144,238,144],['LightPink',255,182,193],['LightSalmon',255,160,122],['LightSeaGreen',32,178,170],['LightSkyBlue',135,206,250],['LightSlateGray',119,136,153],['LightSlateGrey',119,136,153],['LightSteelBlue',176,196,222],['LightYellow',255,255,224],['Lime',0,255,0],['LimeGreen',50,205,50],['Linen',250,240,230],['Magenta',255,0,255],['Maroon',128,0,0],['MediumAquaMarine',102,205,170],['MediumBlue',0,0,205],['MediumOrchid',186,85,211],['MediumPurple',147,112,219],['MediumSeaGreen',60,179,113],['MediumSlateBlue',123,104,238],['MediumSpringGreen',0,250,154],['MediumTurquoise',72,209,204],['MediumVioletRed',199,21,133],['MidnightBlue',25,25,112],['MintCream',245,255,250],['MistyRose',255,228,225],['Moccasin',255,228,181],['NavajoWhite',255,222,173],['Navy',0,0,128],['OldLace',253,245,230],['Olive',128,128,0],['OliveDrab',107,142,35],['Orange',255,165,0],['OrangeRed',255,69,0],['Orchid',218,112,214],['PaleGoldenRod',238,232,170],['PaleGreen',152,251,152],['PaleTurquoise',175,238,238],['PaleVioletRed',219,112,147],['PapayaWhip',255,239,213],['PeachPuff',255,218,185],['Peru',205,133,63],['Pink',255,192,203],['Plum',221,160,221],['PowderBlue',176,224,230],['Purple',128,0,128],['RebeccaPurple',102,51,153],['Red',255,0,0],['RosyBrown',188,143,143],['RoyalBlue',65,105,225],['SaddleBrown',139,69,19],['Salmon',250,128,114],['SandyBrown',244,164,96],['SeaGreen',46,139,87],['SeaShell',255,245,238],['Sienna',160,82,45],['Silver',192,192,192],['SkyBlue',135,206,235],['SlateBlue',106,90,205],['SlateGray',112,128,144],['SlateGrey',112,128,144],['Snow',255,250,250],['SpringGreen',0,255,127],['SteelBlue',70,130,180],['Tan',210,180,140],['Teal',0,128,128],['Thistle',216,191,216],['Tomato',255,99,71],['Turquoise',64,224,208],['Violet',238,130,238],['Wheat',245,222,179],['White',255,255,255],['WhiteSmoke',245,245,245],['Yellow',255,255,0],['YellowGreen',154,205,50]];
+      for (let i=0;i<names.length;i++)
+       {
+        if(color.toLowerCase()==names[i][0].toLowerCase())
+         {
+          return [names[i][1],names[i][2],names[i][3]];
          }
-       });
-      //-------------------------------
-      this.canvas.addEventListener("mouseleave",(ev)=>
+       }
+      return [255,255,255];// Invalid color
+     }
+    return [r,g,b];
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// itemidx valid only for local card
+  _applayTrackData(data,itemidx)
+   {
+    if(data)
+     {
+      this._Runtime.forEach((e,i)=>
        {
-        this._tracker.bar_id=null;
-        this._tracker.hist_offset=null;
-        this._tracker.data=null;
-        this._drawBarContent();
-        this._broadcast.postMessage({hist_offset:null,data:null,bar_id:null});
-       });
-      //-------------------------------
-      this.canvas.addEventListener("mousemove",(ev)=>
-       {
-        let bar_id=null;
-        let hist_offset=null;
-        let data=null;
-        let mx,my;
-        if(ev.offsetX||ev.offsetY){mx=ev.offsetX;my=ev.offsetY;} else {mx=ev.layerX;my=ev.layerY;} 
-        if(my>=this.metric.padding)
+        if(data.pos==null)
          {
-          let i=Math.trunc((my-this.metric.padding)/this.metric.bar_h);
-          let b_y0=this.metric.padding+this.metric.bar_h*i;
-          let b_y1=b_y0+this.metric.bar_h-this.metric.padding;
-          if(my>=b_y0&&my<b_y1&&mx>=this.metric.padding&&mx<=(this.size_w-this.metric.padding))
+          this._Runtime[i].isTrc=false;
+          this._Runtime[i].trPos=-1;
+          this._drawChartContext(i);
+          this._Runtime[i].histmeasure.textContent='';
+          this._Runtime[i].histbar.setAttribute("width",`0`); 
+          if(itemidx==i)
            {
-            bar_id=i;
-            let lx=mx-this.metric.padding;
-            let ly=Math.round(my-b_y0);
+            this._Runtime[i].tooltip.style.display="none";
+            this._Runtime[i].title.style.display="inline";
+           }
 
-            if(this.histmode>0&&lx>(this.metric.iconwidth+this.metric.padding)&&lx<(this.metric.iconwidth+this.metric.padding+this.metric.chartwidth+1))
+         } 
+        else
+         {
+          this._Runtime[i].isTrc=true;
+          this._Runtime[i].trPos=data.pos;
+          this._drawChartContext(i);
+          if((this._trackingmode==1&&itemidx==i)||(this._trackingmode==3&&itemidx==i)||this._trackingmode==4)
+           {
+            let d=this._getBarHistData(i,data.pos);
+            //Update history bar text
+            if(d.data) this._Runtime[i].histmeasure.textContent=`  ${d.mark} ${+Number(d.data).toFixed(this._Entities[i].precision)} ${this._Entities[i].meas} /`;
+            else this._Runtime[i].histmeasure.textContent='';
+            //Update history bar
+            let prcval=this._getPos(i,Math.abs(d.data),this._allownegativescale?50:100);
+            if(!this._allownegativescale&&d.data<0) this._Runtime[i].histbar.setAttribute("width",`0`); 
+            else this._Runtime[i].histbar.setAttribute("width",`${prcval}%`);
+            if(this._allownegativescale)
              {
-              hist_offset=lx-(this.metric.iconwidth+this.metric.padding+1);
-              data=this._getBarHistData(i,hist_offset);
+              if(d.data<0) this._Runtime[i].histbar.setAttribute("x",`${50-prcval}%`); 
+              else this._Runtime[i].histbar.setAttribute("x",`${50}%`);
+             }
+            if(itemidx==i)
+             {
+
+              let d=new Date(Date.now()-(144-(data.pos))*this._scale);
+              let s="≈"+d.toLocaleTimeString([],{hour: '2-digit', minute:'2-digit'})+" "; //   (146-(this._tracker.hist_offset+1))*this._scale;
+              this._Runtime[i].tooltip.textContent=s;      
+
+              this._Runtime[i].title.style.display="none";
+              this._Runtime[i].tooltip.style.display="inline";
              }
            }
          }
-        if(this.trackingmode>=2) this._broadcast.postMessage({hist_offset,data,bar_id});
-        this._tracker.hist_offset=hist_offset;
-        this._tracker.data=data;
-        this._tracker.bar_id=bar_id;
-        this._drawBarContent();
        });
-      //-------------------------------
-      this._broadcast.onmessage=(event)=>
-       {
-        //console.log(event.data);
-        this._tracker.hist_offset=event.data.hist_offset
-        this._drawBarContent();
-       };
-      //-------------------------------
-
-      new ResizeObserver(rsentries=>
-       {
-
-        this._rebuildColorValue();
-
-//        this.size_w=this.offsetWidth;//this.parentElement.clientWidth-8;//this.clientWidth;
-        this.size_w=this.ctx.canvas.clientWidth;
-        this.size_h=this.ctx.canvas.clientHeight;
-
-        this.histmode=(this.size_w<(this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2))?0:this.cfghistmode;
-
-        //console.log('content dimension changed',this.clientWidth,this.clientHeight);
-        this.canvas.width=this.size_w-2;
-        //this.Context.canvas.height=this.h;
-        this._drawBarContent();
-
-       }).observe(this/*.getElementsByTagName('ha-card')[0]*/);
-
-
-
-      // if some bar defined start history data requester timer
-      if(this.barData.length)
-       {
-        if(this.histmode>0) setTimeout(TDVBarCard._reqHistEntityData,100,this,0);
-       }
-
      }
-    //----------------------------------
-    let ischanged=false;
-    // Applay data
-    for(let i in this.barData)
-     {
-      let old_d=this.barData[i].d;
-      if(hass.states[this.barData[i].e])
-       {
-        //TODO: Refresh precision data
-
-//DEBUG
-//if(i==0) this.barData[i].d=hass.states[this.barData[i].e].state*-1; else 
-        this.barData[i].d=+hass.states[this.barData[i].e].state;
-        this.barData[i].t=this.barData[i].ut??(hass.states[this.barData[i].e].attributes.friendly_name??hass.states[this.barData[i].e].entity_id);
-        this.barData[i].m=hass.states[this.barData[i].e].attributes.unit_of_measurement;
-       }
-      else
-       {
-        this.barData[i].d=0;
-        this.barData[i].t="";
-        this.barData[i].m="";
-       }
-      if(this.animation>0&&old_d!=this.barData[i].d&&this.barData[i].ap==null) {this.barData[i].ap=0;ischanged=true;}
-
-      let icon=this.querySelector(`#tdvbar_${i}`);
-      if(icon)
-       {
-        let ison=false;
-        if(this.barData[i].st&&hass.states[this.barData[i].st]) ison=(hass.states[this.barData[i].st].state=="on");
-        else ison=(this.barData[i].d!=0);//if on/off entity state is not defined the use base state
-        icon.style.color=ison?this.colors.iconon:this.colors.iconoff;
-       }
-     } 
-
-    if(this._anTimerId==null&&ischanged)
-     {
-      let draw=()=>
-       {
-        let now=performance.now();
-        if((now-this._anStart)>10)
-         {
-          this._anStart=now;
-
-          let ch=false;
-          for(let i in this.barData)
-           {
-            if(this.barData[i].ap!=null)
-             {
-              this.barData[i].ap+=0.01
-              if(this.barData[i].ap>=1) this.barData[i].ap=null; 
-              else ch=true;
-             }  
-           }
-          if(!ch) this._anTimerId=null; else window.requestAnimationFrame(draw);
-          this._drawAnimationFrame();
-         }
-        else window.requestAnimationFrame(draw);
-       }
-      this._anTimerId=window.requestAnimationFrame(draw);
-     }
-    this._drawBarContent();
    }
-//#################################################################################################
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   _getBarHistData(BarIdx,HistIdx)
    {
     let data;
-    if(BarIdx>=0&&BarIdx<this.barData.length&&this.barData[BarIdx]&&this.barData[BarIdx].h)
+    if(BarIdx>=0&&BarIdx<this._Runtime.length&&this._Entities[BarIdx]&&this._Entities[BarIdx].h)
      {
-      switch(this.trackingvalue)
+      switch(this._trackingvalue)
        {
         case "min":
          {
-          if(this.allownegativescale&&this.barData[BarIdx].h[HistIdx]?.v<0) data=this.barData[BarIdx].h[HistIdx]?.mx;
-          else data=this.barData[BarIdx].h[HistIdx]?.mn;
+          if(this._allownegativescale&&this._Entities[BarIdx].h[HistIdx]?.v<0) data=this._Entities[BarIdx].h[HistIdx]?.mx;
+          else data=this._Entities[BarIdx].h[HistIdx]?.mn;
 
          } break
-        case "avg": data=this.barData[BarIdx].h[HistIdx]?.v;break
+        case "avg": data=this._Entities[BarIdx].h[HistIdx]?.v;break
         case "max": 
         default:  
          {
-          if(this.allownegativescale&&this.barData[BarIdx].h[HistIdx]?.v<0) data=this.barData[BarIdx].h[HistIdx]?.mn;
-          else data=this.barData[BarIdx].h[HistIdx]?.mx;
+          if(this._allownegativescale&&this._Entities[BarIdx].h[HistIdx]?.v<0) data=this._Entities[BarIdx].h[HistIdx]?.mn;
+          else data=this._Entities[BarIdx].h[HistIdx]?.mx;
          } break
        } 
      }
-    return data;
+
+    let mark;
+    if(this._allownegativescale&&data<0) switch(this._trackingvalue)
+     {
+      case "min": mark="⇑";break;
+      case "avg": mark="~";break;
+      case "max":
+      default:    mark="⇓";break;
+     }  
+    else switch(this._trackingvalue)
+     {
+      case "min": mark="⇓";break;
+      case "avg": mark="~";break;
+      case "max":
+      default:    mark="⇑";break;
+     }  
+
+    return {data,mark};
    }
-//#################################################################################################
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _drawChartContext(index)
+   {
+    if(this._Runtime&&index>=0&&index<this._Runtime.length)
+     {
+      let item=this._Runtime[index];
+      let itemdata=this._Entities[index];
+     
+      item.ctx.fillStyle=this._colorctx.chart_bg;
+      item.ctx.fillRect(0,0,item.w,item.h); 
+      let zeroposchartoffset;
+      if(this._allownegativescale) zeroposchartoffset=Math.round(item.h/2); else zeroposchartoffset=0;
+
+      item.ctx.lineWidth=1;
+      //Draw chart
+      if(this._histmode>0&&itemdata.h&&itemdata.h.length)
+       {
+        // Min/Max
+        item.ctx.strokeStyle=this._colorctx.chart_fghalf;
+        item.ctx.beginPath();
+        for(let i=0;i<itemdata.h.length;i++)
+         {
+          if(itemdata.h[i]&&itemdata.h[i].mx)
+           {
+            item.ctx.moveTo(i+.5,item.h-zeroposchartoffset);
+            if(itemdata.h[i].v>0)
+             {
+              let a=this._getPos(index,Math.abs(itemdata.h[i].mx),item.h-zeroposchartoffset);
+              item.ctx.lineTo(i+.5,((item.h-zeroposchartoffset)-a));
+             } 
+            else if(this._allownegativescale)
+             {
+              let a=this._getPos(index,Math.abs(itemdata.h[i].mn),item.h-zeroposchartoffset);
+              item.ctx.lineTo(i+.5,((item.h-zeroposchartoffset)+a));
+             }
+           }
+         }
+        item.ctx.stroke();
+        // Avg
+  
+        item.ctx.strokeStyle=this._colorctx.chart_fg;
+        item.ctx.beginPath();
+        for(let i=0;i<itemdata.h.length;i++)
+         {
+          if(itemdata.h[i]&&itemdata.h[i].v)
+           {
+            item.ctx.moveTo(i+.5,item.h-zeroposchartoffset);
+            let a=this._getPos(index,Math.abs(itemdata.h[i].v),item.h-zeroposchartoffset);
+            if(itemdata.h[i].v>0) item.ctx.lineTo(i+.5,((item.h-zeroposchartoffset)-a));
+            else if(item._allownegativescale) item.ctx.lineTo(i+.5,((item.h-zeroposchartoffset)+a));
+           }
+         }
+        item.ctx.stroke();
+  
+        // Draw zero line
+        if(this._allownegativescale)
+         {
+          item.ctx.strokeStyle=this._colorctx.frame;
+          item.ctx.beginPath();
+          item.ctx.moveTo(0,item.h-zeroposchartoffset+.5);
+          item.ctx.lineTo(item.w,item.h-zeroposchartoffset+.5);
+          item.ctx.stroke();
+         }
+
+  
+       }
+      else if(this._histmode>0)
+       {
+        item.ctx.fillStyle=this._colorctx.frame;
+        item.ctx.textAlign="center"; 
+        item.ctx.textBaseline="middle";
+
+        let fontArgs =  item.ctx.font.split(' ');
+        item.ctx.font = '14px '+fontArgs[fontArgs.length - 1];
+
+        if(itemdata.fl) item.ctx.fillText(TDVBarCard.LocStr.loading+"...",item.w/2,item.h/2,item.w);
+        else item.ctx.fillText(TDVBarCard.LocStr.nodata,item.w/2,item.h/2,item.w);
+       }
+
+
+      //Draw track line
+      if(this._trackingmode>1&&this._Runtime[index].trPos>=0)
+       {
+        item.ctx.lineWidth=1;
+        item.ctx.setLineDash([2,2]);
+        item.ctx.strokeStyle=this._colorctx.tracker;
+      
+        item.ctx.beginPath();
+        item.ctx.moveTo(this._Runtime[index].trPos+.5,0);        
+        item.ctx.lineTo(this._Runtime[index].trPos+.5,this._Runtime[index].h);
+        item.ctx.stroke();
+        item.ctx.setLineDash([]);
+       }
+
+     }
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _animateBar(index,direction)
+   {
+    if(this._animation)
+     {
+      this._Runtime[index].anim.forEach(elAnchor=>
+       {
+        let f,t;
+        if(direction) f=elAnchor.getAttribute("lr-from"),t=elAnchor.getAttribute("lr-to");
+        else f=elAnchor.getAttribute("rl-from"),t=elAnchor.getAttribute("rl-to");  
+
+        elAnchor.setAttribute("from",f);
+        elAnchor.setAttribute("to",t);
+
+        let isRunning=true;
+        try{elAnchor.getStartTime();} catch(e) {isRunning=false;}
+        if(!isRunning) elAnchor.beginElement();
+       });
+     }
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _getPos(index,val,width)
+   {
+    switch(this._scaletype)
+     {
+      case "linear":
+       {
+        let a=val/(this._Entities[index].rangemax/width);
+        return Math.min(a,width);
+       } break;
+      case "log10":
+       {
+        if(val>=1)
+         {
+          let a=Math.log10(val)/(Math.log10(this._Entities[index].rangemax)/width);
+          return Math.min(a,width);
+         }
+        else return 0;
+       } break;
+     }
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   _fire(type, detail, options)
    {
     options= options || {};
@@ -384,8 +535,50 @@ class TDVBarCard extends HTMLElement
     this.dispatchEvent(event);
     return event;
    }
-//#################################################################################################
-  _BuildDataArray(RawData,Start,Finish)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _pressItem(ev)
+   {
+    ev.stopPropagation();
+    let idx=ev.currentTarget.getAttribute("data-idx");
+    if(idx)
+     {
+      idx=parseInt(idx);
+      if(this._Entities[idx]&&this._Entities[idx].entity!=null)
+       {
+        this._fire("hass-more-info", { entityId: this._Entities[idx].entity });
+       }
+     }
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _pressIcon(ev)
+   {
+    ev.stopPropagation();
+    let idx=ev.currentTarget.getAttribute("data-idx");
+    if(idx)
+     {
+      idx=parseInt(idx);
+      if(this._Entities[idx]&&this._Entities[idx].state!=null)
+       {
+        this._fire("hass-more-info", { entityId: this._Entities[idx].state });
+       }
+     }
+    //this.hass.callService("button", "press", {entity_id: this.stateObj.entity_id,});
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  async _fetchRecent(hass,entityId, start, end, skipInitialState, withAttributes)
+   {
+    let url='history/period';
+    if(start) url+=`/${start.toISOString()}`;
+    url+=`?filter_entity_id=${entityId}`;
+    if(end) url+=`&end_time=${end.toISOString()}`;
+    if(skipInitialState) url+='&skip_initial_state';
+    if(!withAttributes)  url+='&minimal_response';
+    if(withAttributes)   url+='&significant_changes_only=0';
+    //url+=`&no_attributes&minimal_response&significant_changes_only=0`;
+    return hass.callApi('GET', url);
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _buildDataArray(RawData,Start,Finish)
    {
     let GetPosFunc=(a,i)=>{return Math.trunc(new Date(a[i].last_changed).getTime()/this._scale);}
     let rawmax=GetPosFunc(RawData,RawData.length-1);
@@ -406,8 +599,6 @@ class TDVBarCard extends HTMLElement
          {
           for(;r<RawData.length&&GetPosFunc(RawData,r)<=i;r++)
            {
-//DEBUG
-//            if(isNaN(RawData[r].state)) last=null; else last=(+RawData[r].state)*-1;
             if(isNaN(RawData[r].state)) last=null; else last=+RawData[r].state;
             if(last!=null) 
              {
@@ -441,643 +632,168 @@ class TDVBarCard extends HTMLElement
      }
     return {data:res,isactive:isActive};
    }
-//#################################################################################################
-  static async _reqHistEntityData(This,baridx)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  static async _reqHistEntityData(This,baridx,hass)
    {
     if(baridx==0)
      {
-      let curdate=new Date();//This._roundDate(new Date());
-      This.CurMoment=Math.trunc(curdate.getTime()/This._scale);///1000;
+      let curdate=new Date();
+      This.CurMoment=Math.trunc(curdate.getTime()/This._scale);
       This.StartMoment=Math.trunc((curdate.getTime()-(This._msecperday))/This._scale);//This.CurMoment-(24*60*60*1000);// one day
 
       This.ReqStart=new Date(curdate-This._msecperday);
       This.ReqEnd=curdate;
-
 //console.log("start:",This.ReqStart);
 //console.log("end:",This.ReqEnd);
-
      }
-    This.barData[baridx].fl=true;
-    This._drawBarContent();
-
-    //let data_raw=await This._fetchRecent(This.barData[baridx].e,null,null,false,false);
-    let data_raw=await This._fetchRecent(This.barData[baridx].e,This.ReqStart,This.ReqEnd,false,false);
-    if(data_raw&&data_raw.length&&data_raw[0]&&data_raw[0].length)
+    This._Entities[baridx].fl=true;
+    This._drawChartContext(baridx);
+    if(This._Entities[baridx].entity)
      {
-      let da=This._BuildDataArray(data_raw[0],This.StartMoment,This.CurMoment);
-      This.barData[baridx].h=da.data;
-      This.barData[baridx].isempty=!da.isactive;
+      let data_raw=await This._fetchRecent(hass,This._Entities[baridx].entity,This.ReqStart,This.ReqEnd,false,false);
+      if(data_raw&&data_raw.length&&data_raw[0]&&data_raw[0].length)
+       {
+        let da=This._buildDataArray(data_raw[0],This.StartMoment,This.CurMoment);
+        This._Entities[baridx].h=da.data;
+        //This._Entities[baridx].isempty=!da.isactive;
+        if(da.isactive) This._Runtime[baridx].title.classList.remove("muted");
+        else This._Runtime[baridx].title.classList.add("muted");
+       }
      }
-    This.barData[baridx].fl=false;
+    This._Entities[baridx].fl=false;
+    This._drawChartContext(baridx);
     baridx++;
-    This._drawBarContent();
 
-    if(baridx<This.barData.length)
+    if(baridx<This._Entities.length)
      {
-      setTimeout(TDVBarCard._reqHistEntityData,100,This,baridx);
+      setTimeout(TDVBarCard._reqHistEntityData,100,This,baridx,hass);
      }
     else
      {
-      setTimeout(TDVBarCard._reqHistEntityData,60000,This,0);
+      setTimeout(TDVBarCard._reqHistEntityData,300000,This,0,hass);
      }
    }
-//#################################################################################################
-  async _fetchRecent(entityId, start, end, skipInitialState, withAttributes)
-   {
-    let url='history/period';
-    if(start) url+=`/${start.toISOString()}`;
-    url+=`?filter_entity_id=${entityId}`;
-    if(end) url+=`&end_time=${end.toISOString()}`;
-    if(skipInitialState) url+='&skip_initial_state';
-    if(!withAttributes)  url+='&minimal_response';
-    if(withAttributes)   url+='&significant_changes_only=0';
-    //url+=`&no_attributes&minimal_response&significant_changes_only=0`;
-    return this._hass.callApi('GET', url);
-   }
-//#################################################################################################
-  _getResString(resname,failstr)
-   {
-    if(this._hass&&this._hass.selectedLanguage&&this._hass.resources&&this._hass.resources[this._hass.selectedLanguage]) 
-     return this._hass.resources[this._hass.selectedLanguage][resname]??failstr;
-    else 
-     return failstr;
-   }
-//#################################################################################################
-  _getPos(v,width)
-   {
-    let pc=this.maxpos/width;
-    switch(this.config.scaletype?this.config.scaletype.toLowerCase():"log10")
-     {
-      case "linear":
-       {
-        let a=v/pc;
-        return Math.min(Math.round(a),width);
-       } break;
-      case "log10":
-       {
-        if(v>=1)
-         {
-          let a=Math.log10(v)/pc;
-          return Math.min(Math.round(a),width);
-         }
-        else return 0;
-       } break;
-     }
-   }
-//#################################################################################################
-  _rgbval(color)
-   {
-    //let hex=color.replace(/^\s*#|\s*$/g,''); // strip the leading # if it's there
-    //if(hex.length==3) hex=hex.replace(/(.)/g, '$1$1');  // convert 3 char codes --> 6, e.g. `E0F` --> `EE00FF`
-    //return [parseInt(hex.substr(0,2),16),parseInt(hex.substr(2,2),16),parseInt(hex.substr(4,2),16)];
 
-    //var div = document.createElement('div'), m;
-    //div.style.color = input;
-    //m = getComputedStyle(div).color.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
-    //if(m) return [m[1],m[2],m[3]];
-    //else throw new Error("Colour "+input+" could not be parsed.");
-
-    // return an array containing R, G and B values
-    if(color === 'transparent') color = '#FFF';// IE (6 and ?)
-    let r,g,b;
-    let hex_color_pcre = new RegExp("^#[0-9a-f]{3}([0-9a-f]{3})?$",'gi');
-    let rgb_color_pcre = new RegExp("rgb\\(\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*\\)$",'gi');
-    let rgb_percent_color_pcre = new RegExp("rgb\\(\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*\\)$",'gi');
-    let rgba_color_pcre = new RegExp("rgba\\(\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*,\\s*((?:[0-2]?[0-9])?[0-9])\\s*,.*\\)$",'gi');
-    let rgba_percent_color_pcre = new RegExp("rgba\\(\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,\\s*((?:[0-1]?[0-9])?[0-9])%\\s*,.*\\)$",'gi');
-    if(color.match(hex_color_pcre))
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // Whenever the state changes, a new `hass` object is set. Use this to update your content.
+  set hass(hass)
+   {
+    if(!this._IsInited&&hass)
      {
-      if(color.length==4){r=color.charAt(1)+""+color.charAt(1);g=color.charAt(2)+""+color.charAt(2);b=color.charAt(3)+""+color.charAt(3);}
-      else {r=color.charAt(1)+""+color.charAt(2);g=color.charAt(3)+""+color.charAt(4);b=color.charAt(5)+""+color.charAt(6);}
-      r=parseInt(r,16);g=parseInt(g,16);b=parseInt(b,16);
-     }
-    else if(color.match(rgb_color_pcre)||color.match(rgba_color_pcre)){r=+RegExp.$1;g=+RegExp.$2;b=+RegExp.$3;}
-    else if(color.match(rgb_percent_color_pcre)||color.match(rgba_percent_color_pcre)){r=parseInt((RegExp.$1)*2.55);g=parseInt((RegExp.$2)*2.55);b=parseInt((RegExp.$3)*2.55);}
-    else
-     {
-      const names=[['AliceBlue',240,248,255],['AntiqueWhite',250,235,215],['Aqua',0,255,255],['Aquamarine',127,255,212],['Azure',240,255,255],['Beige',245,245,220],['Bisque',255,228,196],['Black',0,0,0],['BlanchedAlmond',255,235,205],['Blue',0,0,255],['BlueViolet',138,43,226],['Brown',165,42,42],['BurlyWood',222,184,135],['CadetBlue',95,158,160],['Chartreuse',127,255,0],['Chocolate',210,105,30],['Coral',255,127,80],['CornflowerBlue',100,149,237],['Cornsilk',255,248,220],['Crimson',220,20,60],['Cyan',0,255,255],['DarkBlue',0,0,139],['DarkCyan',0,139,139],['DarkGoldenRod',184,134,11],['DarkGray',169,169,169],['DarkGrey',169,169,169],['DarkGreen',0,100,0],['DarkKhaki',189,183,107],['DarkMagenta',139,0,139],['DarkOliveGreen',85,107,47],['DarkOrange',255,140,0],['DarkOrchid',153,50,204],['DarkRed',139,0,0],['DarkSalmon',233,150,122],['DarkSeaGreen',143,188,143],['DarkSlateBlue',72,61,139],['DarkSlateGray',47,79,79],['DarkSlateGrey',47,79,79],['DarkTurquoise',0,206,209],['DarkViolet',148,0,211],['DeepPink',255,20,147],['DeepSkyBlue',0,191,255],['DimGray',105,105,105],['DimGrey',105,105,105],['DodgerBlue',30,144,255],['FireBrick',178,34,34],['FloralWhite',255,250,240],['ForestGreen',34,139,34],['Fuchsia',255,0,255],['Gainsboro',220,220,220],['GhostWhite',248,248,255],['Gold',255,215,0],['GoldenRod',218,165,32],['Gray',128,128,128],['Grey',128,128,128],['Green',0,128,0],['GreenYellow',173,255,47],['HoneyDew',240,255,240],['HotPink',255,105,180],['IndianRed',205,92,92],['Indigo',75,0,130],['Ivory',255,255,240],['Khaki',240,230,140],['Lavender',230,230,250],['LavenderBlush',255,240,245],['LawnGreen',124,252,0],['LemonChiffon',255,250,205],['LightBlue',173,216,230],['LightCoral',240,128,128],['LightCyan',224,255,255],['LightGoldenRodYellow',250,250,210],['LightGray',211,211,211],['LightGrey',211,211,211],['LightGreen',144,238,144],['LightPink',255,182,193],['LightSalmon',255,160,122],['LightSeaGreen',32,178,170],['LightSkyBlue',135,206,250],['LightSlateGray',119,136,153],['LightSlateGrey',119,136,153],['LightSteelBlue',176,196,222],['LightYellow',255,255,224],['Lime',0,255,0],['LimeGreen',50,205,50],['Linen',250,240,230],['Magenta',255,0,255],['Maroon',128,0,0],['MediumAquaMarine',102,205,170],['MediumBlue',0,0,205],['MediumOrchid',186,85,211],['MediumPurple',147,112,219],['MediumSeaGreen',60,179,113],['MediumSlateBlue',123,104,238],['MediumSpringGreen',0,250,154],['MediumTurquoise',72,209,204],['MediumVioletRed',199,21,133],['MidnightBlue',25,25,112],['MintCream',245,255,250],['MistyRose',255,228,225],['Moccasin',255,228,181],['NavajoWhite',255,222,173],['Navy',0,0,128],['OldLace',253,245,230],['Olive',128,128,0],['OliveDrab',107,142,35],['Orange',255,165,0],['OrangeRed',255,69,0],['Orchid',218,112,214],['PaleGoldenRod',238,232,170],['PaleGreen',152,251,152],['PaleTurquoise',175,238,238],['PaleVioletRed',219,112,147],['PapayaWhip',255,239,213],['PeachPuff',255,218,185],['Peru',205,133,63],['Pink',255,192,203],['Plum',221,160,221],['PowderBlue',176,224,230],['Purple',128,0,128],['RebeccaPurple',102,51,153],['Red',255,0,0],['RosyBrown',188,143,143],['RoyalBlue',65,105,225],['SaddleBrown',139,69,19],['Salmon',250,128,114],['SandyBrown',244,164,96],['SeaGreen',46,139,87],['SeaShell',255,245,238],['Sienna',160,82,45],['Silver',192,192,192],['SkyBlue',135,206,235],['SlateBlue',106,90,205],['SlateGray',112,128,144],['SlateGrey',112,128,144],['Snow',255,250,250],['SpringGreen',0,255,127],['SteelBlue',70,130,180],['Tan',210,180,140],['Teal',0,128,128],['Thistle',216,191,216],['Tomato',255,99,71],['Turquoise',64,224,208],['Violet',238,130,238],['Wheat',245,222,179],['White',255,255,255],['WhiteSmoke',245,245,245],['Yellow',255,255,0],['YellowGreen',154,205,50]];
-      for (let i=0;i<names.length;i++)
+      if(!TDVBarCard.LocStr._isinited)
        {
-        if(color.toLowerCase()==names[i][0].toLowerCase())
-         {
-          return [names[i][1],names[i][2],names[i][3]];
-         }
+        TDVBarCard.LocStr.loading=hass.localize("ui.common.loading")||TDVBarCard.LocStr.loading;
+        TDVBarCard.LocStr.nodata=hass.localize("ui.components.data-table.no-data")||TDVBarCard.LocStr.nodata;
+        TDVBarCard.LocStr._isinited=true;
        }
-      return [255,255,255];// Invalid color
-     }
-    return [r,g,b];
-
-
-   }
-//#################################################################################################
-  _rgbToHsl(color)
-   {
-    let hex=this._rgbval(color);
-    let r=hex[0]/255,g=hex[1]/255,b=hex[2]/255;
-  
-    let max = Math.max(r, g, b), min = Math.min(r, g, b);
-    let h,s,l=(max+min)/2;
-  
-    if(max==min) h=s=0; else
-     {
-      let d=max-min;
-      s=l>0.5?d/(2-max-min):d/(max+min);
-      switch(max)
+      this._Entities.forEach((e,i)=>
        {
-        case r: h=(g-b)/d+(g<b?6:0);break;
-        case g: h=(b-r)/d+2;break;
-        case b: h=(r-g)/d+4;break;
-       }
-      h/=6;
-     }
-    return [h, s, l];
-   }
-//#################################################################################################
-  _hslToRgb(h, s, l)
-   {
-    let r, g, b;
-    if(s==0) r=g=b=l; else
-     {
-      function hue2rgb(p,q,t)
-       {
-        if(t<0) t += 1;
-        if(t>1) t -= 1;
-        if(t<1/6) return p + (q - p) * 6 * t;
-        if(t<1/2) return q;
-        if(t<2/3) return p + (q - p) * (2/3 - t) * 6;
-        return p;
-       }
-  
-      let q=l<0.5?l*(1+s):l+s-l*s;
-      let p=2*l-q;
-      r=hue2rgb(p,q,h+1/3);
-      g=hue2rgb(p,q,h);
-      b=hue2rgb(p,q,h-1/3);
-     }
-    //return [r*255,g*255,b*255];
-    return `#${Number(Math.round(r*255)).toString(16).padStart(2, '0')}${Number(Math.round(g*255)).toString(16).padStart(2, '0')}${Number(Math.round(b*255)).toString(16).padStart(2, '0')}`
-   }
-//#################################################################################################
-  _drawBarItemAnimationFrame(x, y, width, height,entity,baridx)
-   {
-    let bar_x;
-    if(this.histmode>0) bar_x=x+this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2;
-    else bar_x=x+this.metric.iconwidth+this.metric.padding;
-    let bar_yoffset=this.metric.nameheight;//Math.trunc(height/2);
-
-    // Actual bar data  (draw animation only if the data is not tracked)
-    if(entity.d!=0&&/*this._tracker.bar_id!=baridx*/this._tracker.hist_offset==null&&entity.ap!=null)
-     {
-      let zeroposbaroffset;
-      if(this.allownegativescale) zeroposbaroffset=Math.round((width-bar_x-1)/2); else zeroposbaroffset=0;
-
-      let dp=this._getPos(Math.abs(entity.d),(width-bar_x-1)-zeroposbaroffset);
-      if(dp>4) 
-       {
-        let bpx;
-        let bpw=dp-2.5;
-        if(entity.d>0)   
+        if(e.entity&&hass.entities[e.entity])
          {
-          bpx=bar_x+zeroposbaroffset+1.5;
+          if(!e.name)
+           {
+            switch(this._namepriority)
+             {
+              case 0: e.name=hass.devices[hass.entities[e.entity].device_id].name;break; // Device name
+              case 1: e.name=hass.entities[e.entity].name;break;                         // Entity name
+             }
+           }
+          e.precision=hass.entities[e.entity].display_precision??e.precision;
+          e.meas=hass.states[e.entity].attributes.unit_of_measurement??e.meas;
          }
-        else if(this.allownegativescale)
+       });
+
+      // if some bar defined start history data requester timer
+      if(this._Entities.length)
+       {
+        if(this._histmode>0) setTimeout(TDVBarCard._reqHistEntityData,100,this,0,hass);
+       }
+    
+      this._IsInited=true;
+     }
+
+    if(this._Runtime&&this._Runtime.length==this._Entities.length)
+     {
+      this._Entities.forEach((e,i)=>
+       {
+        if(e.entity&&hass.entities[e.entity])
          {
-          bpx=bar_x+zeroposbaroffset+1.5-dp;
-         }
-        else return;  
+          this._Runtime[i].base.classList.remove('error');
+          let val=this._Runtime[i].value=Number(hass.states[e.entity].state);
+          if(isNaN(val))
+           {
+            this._Runtime[i].measure.textContent='?';
+            this._Runtime[i].bar.setAttribute("width",`0`); 
+           }
+          else if(this._Runtime[i].val!=val)
+           {
+            //Update bar text
+            if(val!=0) this._Runtime[i].measure.textContent=`${+Number(val).toFixed(this._Entities[i].precision)} ${this._Entities[i].meas}`;
+            else this._Runtime[i].measure.textContent='';
+            //Update bar
+            let prcval=this._getPos(i,Math.abs(val),this._allownegativescale?50:100);
+            if(!this._allownegativescale&&val<0) this._Runtime[i].bar.setAttribute("width",`0`); 
+            else this._Runtime[i].bar.setAttribute("width",`${prcval}%`);
+            if(this._allownegativescale)
+             {
+              if(val<0) this._Runtime[i].bar.setAttribute("x",`${50-prcval}%`); 
+              else this._Runtime[i].bar.setAttribute("x",`${50}%`);
+             }
+            this._animateBar(i,this._Runtime[i].val<val);
+            this._Runtime[i].val=val;
+           }
+          //Update icon
+          let ison=false;
+          if(this._Entities[i].state&&hass.states[this._Entities[i].state]) ison=(hass.states[this._Entities[i].state].state=="on");
+          else ison=(val!=0);//if on/off entity state is not defined the use base state
+          this._Runtime[i].icon.setAttribute("style",`color:${ison?this._color.iconon:this._color.iconoff}`);
 
-        if(entity.ap<0.99)
-         { 
-          const grd=this.ctx.createLinearGradient(bar_x+.5,0,width+.5,0);
-          grd.addColorStop(0, entity.bar_fg);
-          if(entity.ap>0.1) grd.addColorStop(entity.ap-0.1,entity.bar_fg);
-          grd.addColorStop(entity.ap,entity.bar_fg_a);
-          if(entity.ap<0.90) grd.addColorStop(entity.ap+.1,entity.bar_fg);
-          grd.addColorStop(1,entity.bar_fg);
-
-          this.ctx.fillStyle=grd;
-          this.ctx.fillRect(bpx,y+bar_yoffset+.5,bpw,height-bar_yoffset-.5);
          }
         else
          {
-          this.ctx.fillStyle=entity.bar_fg;
-          this.ctx.fillRect(bpx,y+bar_yoffset+.5,bpw,height-bar_yoffset-.5);
+          this._Runtime[i].base.classList.add('error');
+          this._Runtime[i].measure.textContent=`Error`;
          }
+       });
+//      this._hassForPreview=null;
+     }// else this._hassForPreview=hass; 
 
-        // Bar grid
-        this.ctx.strokeStyle=this.colors.bar_grid;
-        this.ctx.beginPath();
-        let gridstep=this.maxposraw/10;
-        for(let s=gridstep;s<this.maxposraw;s+=gridstep)
-         {
-          let a=this._getPos(s,(width-bar_x)-zeroposbaroffset);
-          if(a<(dp-2))
-           { 
-            if(entity.d>0)
-             {
-              this.ctx.moveTo(bar_x+a+zeroposbaroffset,y+bar_yoffset+1);
-              this.ctx.lineTo(bar_x+a+zeroposbaroffset,y+height);
-             }
-            else if(entity.d<0&&this.allownegativescale)
-             {
-              this.ctx.moveTo(bar_x+zeroposbaroffset-a,y+bar_yoffset+1);
-              this.ctx.lineTo(bar_x+zeroposbaroffset-a,y+height);
-             } 
-           }
-         }
-        this.ctx.stroke();
-       }
-     }
    }
-//#################################################################################################
-  _drawBarItem(x, y, width, height,entity,baridx)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // The height of your card. Home Assistant uses this to automatically distribute all cards over the available columns in masonry view
+  getCardSize()
    {
-    let bar_x;
-    if(this.histmode>0) bar_x=x+this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2;
-    else bar_x=x+this.metric.iconwidth+this.metric.padding;
-//console.log(">>>>>>>>>>>>>>>>>>>>>>>>>",this.fonts.name,this.metric.nameheight)
-
-    let bar_yoffset=this.metric.nameheight;//Math.trunc(height/2);
-    let chart_x=x+this.metric.iconwidth+this.metric.padding;
-
-    this.ctx.strokeStyle=this.colors.bar_frame;
-    // Draw main bar and chart frame
-    this.ctx.fillStyle=this.colors.bar_bg;//this.colors.card_bg;
-    this._roundRect(bar_x,y+bar_yoffset,width-bar_x+.5, height-bar_yoffset+.5,3,true,true);
-
-    this.ctx.fillStyle=this.colors.chart_bg;//this.colors.card_bg
-    if(this.histmode>0) this._roundRect(chart_x,y,this.metric.chartwidth+2,height+.5,0,true,true);
-
-    // Text block
-    this.ctx.textBaseline="top";//"middle"; 
-    //this.ctx.font=this.fonts.name;//"14px Roboto, Noto, sans-serif "//
-
-    let fontArgs = this.ctx.font.split(' ');
-    this.ctx.font = this.fonts.size+' '+fontArgs[fontArgs.length - 1];
-
-
-    // Value
-    let valstrwidth=0;
-    let tvalstrwidth=0;
-    if(Number(entity.d)!=0)
-     {
-      // Form a string with the current value
-      let curvalstr=Number(entity.d.toFixed(entity.pr))+" "+entity.m;
-      valstrwidth=this.ctx.measureText(curvalstr).width;
-      this.ctx.fillStyle=this.colors.name;
-      this.ctx.textAlign="end"; 
-      this.ctx.fillText(curvalstr,width+.5,y+3);
-     }
-    // Tracked value
-    let trval;
-    if(this._tracker.data!=null&&this._tracker.data!=0&&this._tracker.bar_id!=null&&this._tracker.bar_id==baridx&&(this.trackingmode==1||this.trackingmode==3))
-     {
-      trval=Number(this._tracker.data);
-     }
-    else if(this._tracker.hist_offset!=null&&this.trackingmode==4)
-     {
-      trval=Number(this._getBarHistData(baridx,this._tracker.hist_offset));
-     }
-
-    if(trval&&trval!=0)
-     {
-      let curvalstr="";
-
-      if(this.allownegativescale&&trval<0) switch(this.trackingvalue)
-       {
-        case "min": curvalstr="⇑ ";break;
-        case "avg": curvalstr="~ ";break;
-        case "max":
-        default:    curvalstr="⇓ ";break;
-       }  
-      else switch(this.trackingvalue)
-       {
-        case "min": curvalstr="⇓ ";break;
-        case "avg": curvalstr="~ ";break;
-        case "max":
-        default:    curvalstr="⇑ ";break;
-       }  
-
-      curvalstr+=Number(trval.toFixed(entity.pr))+" "+entity.m+" / ";
-      tvalstrwidth=this.ctx.measureText(curvalstr).width;
-      this.ctx.fillStyle=this.colors.chart_fg;
-      this.ctx.textAlign="end"; 
-      this.ctx.fillText(curvalstr,width+.5-valstrwidth,y+3);
-
-     }
-
-
-    // Name
-    this.ctx.fillStyle=(entity.isempty==true)?this.colors.bar_frame:this.colors.name;
-    this.ctx.textAlign="start"; 
-    this.ctx.fillText(entity.t,bar_x,y+3,(width-bar_x+.5)-(valstrwidth+tvalstrwidth+this.metric.padding));
-
-    let zeroposbaroffset;
-    let zeroposchartoffset;
-    if(this.allownegativescale) 
-     {
-      zeroposbaroffset=Math.round((width-bar_x-1)/2);
-      zeroposchartoffset=Math.round((height-2)/2);
-     }
-    else
-     {
-      zeroposbaroffset=0;
-      zeroposchartoffset=0;
-     }
-
-    // Actual bar data
-    if(entity.d>0)
-     {
-      this.ctx.fillStyle=entity.bar_fg;//?entity.bar_fg:this.colors.bar_fg;
-      this._roundRect(bar_x+.5+zeroposbaroffset,y+bar_yoffset+.5,this._getPos(entity.d,width-bar_x-1-zeroposbaroffset),height-bar_yoffset-.5,3,true,true);
-     }
-    else if(entity.d<0&&this.allownegativescale)
-     {
-      this.ctx.fillStyle=entity.bar_fg;//?entity.bar_fg:this.colors.bar_fg;
-      let w=this._getPos(Math.abs(entity.d),width-bar_x-1-zeroposbaroffset);
-      this._roundRect((bar_x+.5+zeroposbaroffset)-w,y+bar_yoffset+.5,w,height-bar_yoffset-.5,3,true,true);
-     }
-
-    // Tracked bar data
-    if(this._tracker.data!=null&&this._tracker.data!=0&&this._tracker.bar_id!=null&&this._tracker.bar_id==baridx&&(this.trackingmode==1||this.trackingmode==3))
-     {
-      this.ctx.fillStyle=this.colors.bar_tracker;
-      if(this._tracker.data>0) 
-        this._roundRect(bar_x+.5+zeroposbaroffset,y+bar_yoffset+.5,this._getPos(this._tracker.data,width-bar_x-1-zeroposbaroffset),height-bar_yoffset-.5,3,true,true);
-      else if(this._tracker.data<0&&this.allownegativescale)
-       { 
-        let tbw=this._getPos(Math.abs(this._tracker.data),width-bar_x-1-zeroposbaroffset);
-        this._roundRect(bar_x+.5+zeroposbaroffset-tbw,y+bar_yoffset+.5,tbw,height-bar_yoffset-.5,3,true,true);
-       }
-     }
-    else if(this._tracker.hist_offset!=null&&this.trackingmode==4)
-     {
-      let d=this._getBarHistData(baridx,this._tracker.hist_offset);
-      if(d!=null&&d!=0)
-       {
-        this.ctx.fillStyle=this.colors.bar_tracker;
-        if(d>0) this._roundRect(bar_x+.5+zeroposbaroffset,y+bar_yoffset+.5,this._getPos(d,width-bar_x-1-zeroposbaroffset),height-bar_yoffset-.5,3,true,true);
-        else if(d<0&&this.allownegativescale)
-         {
-          let tbw=this._getPos(Math.abs(d),width-bar_x-1-zeroposbaroffset)
-          this._roundRect(bar_x+.5+zeroposbaroffset-tbw,y+bar_yoffset+.5,tbw,height-bar_yoffset-.5,3,true,true);
-         }
-       }
-     }
-
-    // Draw grid block
-    this.ctx.strokeStyle=this.colors.bar_grid;
-    // Bar grid
-    this.ctx.beginPath();
-
-    if(this.allownegativescale)// Draw zero line
-     {
-      this.ctx.moveTo(bar_x+zeroposbaroffset,y+bar_yoffset+1);
-      this.ctx.lineTo(bar_x+zeroposbaroffset,y+height);
-     }
-    let gridstep=this.maxposraw/10;
-    for(let s=gridstep;s<this.maxposraw;s+=gridstep)
-     {
-      let a=this._getPos(s,width-bar_x-zeroposbaroffset);
-      // Draw positive scale grid 
-      this.ctx.moveTo(bar_x+zeroposbaroffset+a,y+bar_yoffset+1);
-      this.ctx.lineTo(bar_x+zeroposbaroffset+a,y+height);
-      // Draw negative scale grid 
-      if(this.allownegativescale)
-       {
-        this.ctx.moveTo(bar_x+zeroposbaroffset-a,y+bar_yoffset+1);
-        this.ctx.lineTo(bar_x+zeroposbaroffset-a,y+height);
-       }
-     }
-    this.ctx.stroke();
-
-    //Draw chart
-    if(this.histmode>0&&entity.h&&entity.h.length)
-     {
-      this.ctx.strokeStyle=this.colors.chart_fghalf;
-      this.ctx.beginPath();
-      for(let i=0;i<entity.h.length;i++)
-       {
-        if(entity.h[i]&&entity.h[i].mx)
-         {
-          this.ctx.moveTo(chart_x+i+1,y+height-zeroposchartoffset);
-          if(entity.h[i].v>0)
-           {
-            let a=this._getPos(Math.abs(entity.h[i].mx),height-2-zeroposchartoffset);
-            this.ctx.lineTo(chart_x+i+1,(y+(height-zeroposchartoffset)-a));
-           } 
-          else if(this.allownegativescale)
-           {
-            let a=this._getPos(Math.abs(entity.h[i].mn),height-2-zeroposchartoffset);
-            this.ctx.lineTo(chart_x+i+1,(y+(height-zeroposchartoffset)+a));
-           }
-         }
-       }
-      this.ctx.stroke();
-
-      this.ctx.strokeStyle=this.colors.chart_fg;
-      this.ctx.beginPath();
-      for(let i=0;i<entity.h.length;i++)
-       {
-        if(entity.h[i]&&entity.h[i].v)
-         {
-          this.ctx.moveTo(chart_x+i+1,y+height-zeroposchartoffset);
-          let a=this._getPos(Math.abs(entity.h[i].v),height-2-zeroposchartoffset);
-          if(entity.h[i].v>0) this.ctx.lineTo(chart_x+i+1,(y+(height-zeroposchartoffset)-a));
-          else if(this.allownegativescale) this.ctx.lineTo(chart_x+i+1,(y+(height-zeroposchartoffset)+a));
-         }
-       }
-      this.ctx.stroke();
-
-      // Draw zero line
-      if(this.allownegativescale)
-       {
-        this.ctx.strokeStyle=this.colors.bar_frame;
-        this.ctx.beginPath();
-        this.ctx.moveTo(chart_x+1,y+height-zeroposchartoffset+.5);
-        this.ctx.lineTo(chart_x+1+this.metric.chartwidth,y+height-zeroposchartoffset+.5);
-        this.ctx.stroke();
-       }
-
-
-     }
-    else if(this.histmode>0)
-     {
-      this.ctx.fillStyle=this.colors.bar_frame;
-      this.ctx.textAlign="center"; 
-      this.ctx.textBaseline="middle";
-      if(entity.fl) this.ctx.fillText(this._getResString("ui.common.loading","Loading")+"...",chart_x+this.metric.chartwidth/2,y+1+height/2,this.metric.chartwidth);
-      else this.ctx.fillText(this._getResString("ui.components.data-table.no-data","No data"),chart_x+this.metric.chartwidth/2,y+1+height/2,this.metric.chartwidth);
-     }
-    this._drawBarItemAnimationFrame(x, y, width, height,entity,baridx);
+    return this._Entities.length??3;
    }
-//#################################################################################################
-  _drawBarContent()
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // The rules for sizing your card in the grid in sections view
+  getGridOptions()
    {
-/*
-    // attempt fix widget width detection 
-    if(this.size_w!=this.offsetWidth) 
-     {
-      this._rebuildColorValue();
-      this.size_w=this.offsetWidth;
-      this.histmode=(this.size_w<(this.metric.chartwidth+this.metric.iconwidth+this.metric.padding*2))?0:this.cfghistmode;
-      this.canvas.width=this.size_w-2;
-     }
-*/
-    //this._rebuildColorValue();
-    this.ctx.clearRect(0, 0,this.size_w,this.size_h);
-
-    //this.ctx.fillStyle=this.colors.card_bg;
-    //this.ctx.fillRect(0,0,this.size_w,this.size_h); 
-    this.ctx.lineWidth=1;
-    // Draw content
-    let y=this.metric.padding;
-    for(let e in this.barData)
-     {
-      let r_y=Math.round(y);   
-      this._drawBarItem(this.metric.padding+.5,r_y+.5,this.size_w-(this.metric.padding+1),Math.round(this.metric.bar_h)-(this.metric.padding+.5),this.barData[e],e);
-      y+=this.metric.bar_h;
-     }
-    if(this.histmode>0&&this._tracker.hist_offset!=null&&this.trackingmode>=2)
-     {
-      this.ctx.lineWidth=1;
-      this.ctx.setLineDash([2,2]);
-      this.ctx.strokeStyle=this.colors.tracker1;
-      
-      this.ctx.beginPath();
-      this.ctx.moveTo(this.metric.iconwidth+this.metric.padding*2+.5+this._tracker.hist_offset+1,this.metric.padding);        
-      this.ctx.lineTo(this.metric.iconwidth+this.metric.padding*2+.5+this._tracker.hist_offset+1,this.size_h-this.metric.padding);
-      this.ctx.stroke();
-      this.ctx.setLineDash([]);
-
-      if(this._tracker.bar_id!=null)
-       {
-        // position
-        let d=new Date(Date.now()-(146-(this._tracker.hist_offset+1))*this._scale);
-        let s=" ≈"+d.toLocaleTimeString([],{hour: '2-digit', minute:'2-digit'})+" "; //   (146-(this._tracker.hist_offset+1))*this._scale;
-
-        let m=this.ctx.measureText(s).width;
-
-        this.ctx.fillStyle=this.colors.tracker1;
-        this.ctx.textBaseline="middle";
-
-        let s_x=this.metric.padding+.5+(this.metric.iconwidth+this.metric.padding);
-        if(this._tracker.hist_offset>(this.metric.chartwidth/2)) this.ctx.textAlign="left",s_x+=this.metric.padding/2;
-        else s_x+=this.metric.chartwidth-m;//this.metric.padding/2;
-        let s_y=this.metric.padding/2+this.metric.bar_h*this._tracker.bar_id+1+this.metric.bar_h/2
-
-        this.ctx.fillStyle=this.colors.card_bg;
-        this._roundRect(s_x,s_y-(this.metric.nameheight/2+1),m,this.metric.nameheight,5,true,true);
-
-
-        this.ctx.fillStyle=this.colors.tracker1;
-        this.ctx.fillText(s,
-                          s_x,
-                          s_y,
-                          this.metric.chartwidth);
-       }
-
-
-     }
+    return {rows:this._Entities.length??5, columns:12, min_rows:1, max_rows:30};
    }
-//#################################################################################################
-  _drawAnimationFrame()
-   {
-    let y=this.metric.padding;
-    for(let e in this.barData)
-     {
-      let r_y=Math.round(y);   
-      this._drawBarItemAnimationFrame(this.metric.padding+.5,r_y+.5,this.size_w-(this.metric.padding+1),Math.round(this.metric.bar_h)-(this.metric.padding+.5),this.barData[e],e);
-      y+=this.metric.bar_h;
-     }
-   }
-//#################################################################################################
-  _rebuildColorValue()
-   {
-    //console.dir(this.config.colors);
-
-    let hsl;
-    let isDarkMode=this._hass.themes.darkMode;
-    this.colors={}
-
-    //this.colors.card_bg=     this._compStyle.getPropertyValue("--mdc-theme-surface");
-    this.colors.card_bg=     this._compStyle.getPropertyValue("--ha-card-background");
-    if(!this.colors.card_bg) this.colors.card_bg=     this._compStyle.getPropertyValue("--card-background-color");
-    if(!this.colors.card_bg) this.colors.card_bg=     "#fff";
-
-    if(this.config.colors&&this.config.colors.frame) this.colors.bar_frame=this.config.colors.frame;
-    else this.colors.bar_frame=   this._compStyle.getPropertyValue("--divider-color");
-
-    if(this.config.colors&&this.config.colors.bar) this.colors.bar_fg=this.config.colors.bar;
-    else this.colors.bar_fg=      this._compStyle.getPropertyValue("--mdc-theme-primary");
-
-    hsl=this._rgbval(this._compStyle.getPropertyValue("--mdc-theme-secondary"));
-    this.colors.bar_tracker= `rgba(${hsl[0]},${hsl[1]},${hsl[2]},.5)`;
-
-    if(this.config.colors&&this.config.colors.chart) this.colors.chart_fg=this.config.colors.chart;
-    else this.colors.chart_fg=    this._compStyle.getPropertyValue("--mdc-theme-secondary");
-
-    //hsl=this._rgbToHsl(this.colors.chart_fg);
-    //this.colors.chart_fghalf=this._hslToRgb(hsl[0],hsl[1],isDarkMode?hsl[2]-.25:hsl[2]+.25);
-    hsl=this._rgbval(this.colors.chart_fg);
-    this.colors.chart_fghalf=`rgba(${hsl[0]},${hsl[1]},${hsl[2]},.5)`;
-
-    this.colors.bar_grid=  isDarkMode?"rgba(255,255,255,0.2)":"rgba(0,0,0,0.2)";
-    this.colors.tracker1=    this._compStyle.getPropertyValue("--mdc-theme-primary");
-    this.colors.iconoff=     this._compStyle.getPropertyValue("--mdc-theme-text-icon-on-background");
-    this.colors.iconon=      this._compStyle.getPropertyValue("--mdc-theme-secondary");
-
-    if(this.config.colors&&this.config.colors.fontcolor) this.colors.name=this.config.colors.fontcolor;
-    else this.colors.name=        this._compStyle.getPropertyValue("--primary-text-color"); 
-
-    if(this.config.colors&&this.config.colors.bar_bg) this.colors.bar_bg=this.config.colors.bar_bg;
-    else this.colors.bar_bg=this.colors.card_bg;
-
-    if(this.config.colors&&this.config.colors.chart_bg) this.colors.chart_bg=this.config.colors.chart_bg;
-    else this.colors.chart_bg=this.colors.card_bg;
-   }
-//#################################################################################################
-//  _roundDate(date)
-//   {
-//    let coeff=1000*this.GroupBySec;
-//    return new Date(Math.floor(date.getTime() / coeff) * coeff);
-//   }
-//#################################################################################################
-  _roundRect(x, y, width, height, radius, fill, stroke)
-   {
-    if(typeof stroke == 'undefined')  {stroke = true;}
-    if(typeof radius === 'undefined') {radius = 5;}
-    if(typeof radius === 'number')    {radius = {tl: radius, tr: radius, br: radius, bl: radius};}
-    else 
-     {
-      let defaultRadius = {tl: 0, tr: 0, br: 0, bl: 0};
-      for(let side in defaultRadius) {radius[side]=radius[side]||defaultRadius[side];}
-     }
-    this.ctx.beginPath();
-    this.ctx.moveTo(x + radius.tl, y);
-    this.ctx.lineTo(x + width - radius.tr, y);
-    this.ctx.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
-    this.ctx.lineTo(x + width, y + height - radius.br);
-    this.ctx.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
-    this.ctx.lineTo(x + radius.bl, y + height);
-    this.ctx.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
-    this.ctx.lineTo(x, y + radius.tl);
-    this.ctx.quadraticCurveTo(x, y, x + radius.tl, y);
-    this.ctx.closePath();
-    if(fill)   {this.ctx.fill();}
-    if(stroke) {this.ctx.stroke();}
-   }
-//#################################################################################################
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   static getStubConfig()
    {
     //debugger
-    return {title:"Optional card title",
-            rangemax:2000, 
-            entities:[{entity:"<enter base entity name>",
-                       name:  "Parameter name",
-                       icon:  "mdi:power-socket-de",
-                       state: "<enter switch entity name>"}] 
-           }
+    let hass=document.querySelector('home-assistant')?.hass;
+    if(hass)
+     {
+      let cfg={entities:[]};
+      for(let i in hass.states)
+       {
+        if(i.startsWith("sensor.")&&i.endsWith("_power"))
+         {
+          if(cfg.entities.push({entity:i})>2) break;
+         }
+       }
+      return cfg;
+     }
+    else return {title:null,entities:[{entity:"<enter base entity name>",name:"Parameter name",icon:  "mdi:power-socket-de",state: "<enter switch entity name>"}] }
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  static getConfigElement()
+   {
+    return document.createElement("tdv-bar-card-editor");
    }
 
  }
@@ -1085,11 +801,308 @@ class TDVBarCard extends HTMLElement
 customElements.define("tdv-bar-card", TDVBarCard);
 
 //#################################################################################################
+class TDVBarCardEditor extends LitElement
+ {
+  constructor()
+   {
+    super();
+    this._config={entities:[]};
+    this.OpenEntityIndex=null;
+    this.hass=document.querySelector('home-assistant')?.hass;
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//https://github.com/thomasloven/hass-config/wiki/PreLoading-Lovelace-Elements
+  async _loadEntityPicker()
+   {
+    if(customElements.get("ha-entity-picker")) return;
+    const ch = await window.loadCardHelpers(); 
+    const c = await ch.createCardElement({ type: "entities", entities: [] });
+    await c.constructor.getConfigElement();
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  firstUpdated()
+   {
+    this._loadEntityPicker();
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  setConfig(config)
+   {
+    this._config=config;
+    if(!this._config.entities) this._config.entities=[];
+
+    this._config.allownegativescale=parseInt(config?.allownegativescale??"0");
+    this._config.histmode=parseInt(config?.histmode??"1");
+    this._config.animation=parseInt(config?.animation??"1");
+    this._config.trackingmode=parseInt(config?.trackingmode??"1");
+    this._config.trackingvalue=config?.trackingvalue??"max";
+
+    this.requestUpdate();
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  configChanged(newConfig)
+   {
+    const event = new Event("config-changed", {bubbles: true,composed: true});
+    event.detail = { config: newConfig };
+    this.dispatchEvent(event);
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _valueChanged(event, key, isNum=false)
+   {
+    if(!this._config) return;
+//    if(event.target.tagName.toLowerCase()=="ha-select"&&!event.target.value) return;  //Select can't be empty
+
+
+    let newConfig=structuredClone(this._config); //JSON.parse(JSON.stringify(this._config));
+    let currentLevel=newConfig;
+
+    if(key.includes('.'))
+     {
+      const parts = key.split('.');
+      for(let i=0;i<parts.length-1;i++) 
+       {
+        if(!currentLevel[parts[i]]) currentLevel[parts[i]]={};
+        currentLevel=currentLevel[parts[i]];
+       }
+      key=parts[parts.length-1];
+     }   
+
+    if(event.target.checked !== undefined) currentLevel[key] = event.target.checked?1:0;
+    else 
+     {
+//console.log("*************",key,typeof(event.target.value),event.target.value)
+//debugger
+      if(!event.target.value) delete currentLevel[key];
+      else currentLevel[key] = isNum?Number(event.target.value):event.target.value;
+     }
+
+    this.configChanged(newConfig);
+    this.requestUpdate();
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _removeEntity(ev)
+   {
+    ev.stopPropagation();
+
+    const index = ev.currentTarget.index;
+    if(index>=this._config.entities.length) return;
+
+    let newConfig=structuredClone(this._config); //JSON.parse(JSON.stringify(this._config));
+    newConfig.entities.splice(index, 1);
+
+    this.configChanged(newConfig);
+    this.requestUpdate();
+
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _addEntity(ev)
+   {
+    const value = ev.detail.value;
+    if(!value) return;
+
+    let newConfig=structuredClone(this._config); //JSON.parse(JSON.stringify(this._config));
+    newConfig.entities.push({entity:value});
+
+    ev.target.value = "";
+
+    this.configChanged(newConfig);
+    this.requestUpdate();
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _editEntity(ev)
+   {
+    const value = ev.detail.value;
+    const index = ev.target.index;
+    if(index>=this._config.entities.length) return;
+
+    let newConfig=structuredClone(this._config); //JSON.parse(JSON.stringify(this._config));
+    newConfig.entities[index].entity=value;
+
+    this.configChanged(newConfig);
+    this.requestUpdate();
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _openEntity(ev)
+   {
+    ev.stopPropagation();
+
+    const index = ev.currentTarget.index;
+    if(index>=this._config.entities.length) return;
+    this.OpenEntityIndex=index;
+
+    this.requestUpdate();
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _returnToList(ev)
+   {
+    this.OpenEntityIndex=null;
+    this.requestUpdate();
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _entityMoved(ev)
+   {
+    ev.stopPropagation();
+    const { oldIndex, newIndex } = ev.detail;
+
+    if(oldIndex>=this._config.entities.length||newIndex>=this._config.entities.length) return;
+
+    let newConfig=structuredClone(this._config); //JSON.parse(JSON.stringify(this._config));
+
+    const [element] = newConfig.entities.splice(oldIndex, 1);
+    newConfig.entities.splice(newIndex, 0, element);
+
+    this.configChanged(newConfig);
+    this.requestUpdate();
+  }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// margin: 0 4px; --text-field-padding: 8px;
+  static get styles()
+   { 
+    return css`
+        .switch-label {padding-left: 14px;}
+        .switch-right {display: flex; flex-direction: row; align-items: center;}
+        .textfield-container { display: flex; flex-direction: column; margin-bottom: 10px; gap: 20px; }
+        .flex-smallcontainer,
+        .flex-container { display: flex; flex-direction: row; gap: 20px; margin-bottom: 10px; }
+        .flex-container ha-textfield,
+        .flex-container ha-icon-picker,
+        .flex-container ha-select {flex-basis: 50%;  flex-grow: 1;}
+        .flex-container .switch-container {flex-basis: 50%; flex-grow: 1;}
+        .flex-smallcontainer .switch-container { flex-basis: 33%; flex-grow: 1;}
+        ha-entity-picker {margin-top: 8px;overflow:hidden;}
+        .entity {display: flex;align-items: center;}
+        .entity .handle {padding-right: 8px; cursor: move; cursor: grab; padding-inline-end: 8px; padding-inline-start: initial; direction: var(--direction);}
+        .entity .handle > * {pointer-events: none;}
+        .entity ha-entity-picker {flex-grow: 1;}
+        .entity .edit-icon, .entity .remove-icon { --mdc-icon-button-size: 36px; color: var(--secondary-text-color);}
+        .add-entity {display: block; margin-left: 31px; margin-right: 71px; margin-inline-start: 31px; margin-inline-end: 71px; direction: var(--direction);}
+        h3 {margin-bottom: 0.5em;}
+        .entity-block h3 {margin-top: 0;}
+        .entity-block h3 ha-icon-button, .entity-blockhdr h3 span {vertical-align: middle;}
+	.entity-sub {margin-left: 2em;margin-top: 10px;}
+	.entity-sub ha-entity-picker {margin-top: 0;}
+    `;
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _buildEntitysList()
+   {
+    let mdiClose="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"; 
+    let mdiPencil="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z";
+    return html`
+	<h3>Entitys</h3>
+	<ha-sortable handle-selector=".handle" @item-moved=${this._entityMoved}>
+	 <div class="entities">
+	  ${this._config.entities.map((e,i)=>
+	   {
+	    return html`
+	     <div class="entity">
+	      <div class="handle"><ha-icon icon="mdi:drag"></ha-icon></div>
+	      <ha-entity-picker allow-custom-entity .hass=${this.hass} .value=${e.entity} .index=${i}  @value-changed=${this._editEntity}></ha-entity-picker>
+	      <ha-icon-button label="Remove entity" .path=${mdiClose} class="remove-icon" .index=${i} @click=${this._removeEntity}></ha-icon-button>
+	      <ha-icon-button label="Edit entity" .path=${mdiPencil}  class="edit-icon" .index=${i} @click=${this._openEntity}></ha-icon-button>
+	     </div>`;
+	   })}
+	 </div>
+	</ha-sortable>
+	<ha-entity-picker class="add-entity" allow-custom-entity .hass=${this.hass} .value=${null} @value-changed=${this._addEntity}></ha-entity-picker>`;
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _buildEntityBlock()
+   {
+    let mdiLeft="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z";
+    return html`
+	<div class="entity-block">
+	 <h3><ha-icon-button label="Return" .path=${mdiLeft} class="return-icon" @click=${this._returnToList}></ha-icon-button><span>Entity property</span></h3>
+	 <ha-entity-picker allow-custom-entity .hass=${this.hass} .value=${this._config.entities[this.OpenEntityIndex].entity} .disabled=${true} ></ha-entity-picker>
+	 <div class="entity-sub">
+	  <div class="textfield-container">
+	   <ha-textfield label="Name" .value="${this._config.entities[this.OpenEntityIndex]?.name||''}"  @change="${(e) => this._valueChanged(e, `entities.${this.OpenEntityIndex}.name`)}"></ha-textfield>
+	  </div>
+	  <div class="flex-container">
+	   <ha-icon-picker label="Icon" .value=${this._config.entities[this.OpenEntityIndex]?.icon||null} @value-changed=${(e) => this._valueChanged(e,`entities.${this.OpenEntityIndex}.icon`)}></ha-icon-picker>
+	  </div>
+	  <div class="flex-container">
+	   <ha-textfield label="Bar color" .value="${this._config.entities[this.OpenEntityIndex]?.barcolor||''}"  @change="${(e) => this._valueChanged(e,`entities.${this.OpenEntityIndex}.barcolor`)}"></ha-textfield>
+	   <ha-textfield label="Max range" type="number" .value="${this._config.entities[this.OpenEntityIndex]?.rangemax||''}" @change="${(e) => this._valueChanged(e,`entities.${this.OpenEntityIndex}.rangemax`,true)}"></ha-textfield>
+	  </div>
+	  <div class="textfield-container">
+	   <ha-entity-picker allow-custom-entity label="State (like a switch)" .hass=${this.hass} .value=${this._config.entities[this.OpenEntityIndex]?.state||null}  @value-changed=${(e) => this._valueChanged(e,`entities.${this.OpenEntityIndex}.state`)}></ha-entity-picker>
+	  </div>
+	 </div>
+	</div>
+     `;
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  render()
+   {
+    return html`
+<div>
+ <div class="textfield-container">
+  <ha-textfield label="Title" .value="${this._config.title||''}"  @change="${(e) => this._valueChanged(e, 'title')}"></ha-textfield>
+ </div>
+ <div class="flex-container">
+  <ha-select naturalMenuWidth fixedMenuPosition label="Scale type" .value=${this._config.scaletype} @change=${(e) => this._valueChanged(e, 'scaletype')} @closed=${(ev) => ev.stopPropagation()}>
+   <ha-list-item .value=${'linear'}>Linear</ha-list-item>
+   <ha-list-item .value=${'log10'}>Logarithmic</ha-list-item>
+  </ha-select>
+  <ha-textfield label="Max range" type="number" .value="${this._config.rangemax||'2000'}" @change="${(e) => this._valueChanged(e,'rangemax',true)}"></ha-textfield>
+ </div>
+ <div class="flex-container">
+  <ha-select naturalMenuWidth fixedMenuPosition label="Mouse tracking mode" .value=${String(this._config.trackingmode)} @change=${(e) => this._valueChanged(e, 'trackingmode',true)} @closed=${(ev) => ev.stopPropagation()}>
+   <ha-list-item .value=${'0'}>Disable</ha-list-item>
+   <ha-list-item .value=${'1'}>Bar</ha-list-item>
+   <ha-list-item .value=${'2'}>History</ha-list-item>
+   <ha-list-item .value=${'3'}>Bar and history</ha-list-item>
+   <ha-list-item .value=${'4'}>All bars and history</ha-list-item>
+  </ha-select>
+  <ha-select naturalMenuWidth fixedMenuPosition label="Type of value to be tracked" .value=${this._config.trackingvalue} @change=${(e) => this._valueChanged(e, 'trackingvalue')} @closed=${(ev) => ev.stopPropagation()}>
+   <ha-list-item .value=${'min'}>Min</ha-list-item>
+   <ha-list-item .value=${'avg'}>Avg</ha-list-item>
+   <ha-list-item .value=${'max'}>Max</ha-list-item>
+  </ha-select>
+ </div>
+ <div class="flex-container">
+  <div class="switch-container switch-right">
+   <ha-switch @change="${(e)=>this._valueChanged(e,'histmode')}" .checked="${this._config.histmode===1}"></ha-switch><label class="switch-label"> History chart </label>
+  </div>
+  <div class="switch-container switch-right">
+   <ha-switch @change="${(e)=>this._valueChanged(e,'animation')}" .checked="${this._config.animation===1}"></ha-switch><label class="switch-label"> Bar animation </label>
+  </div>
+  <div class="switch-container switch-right">
+   <ha-switch @change="${(e)=>this._valueChanged(e,'allownegativescale')}" .checked="${this._config.allownegativescale===1}"></ha-switch><label class="switch-label"> Allow negative values </label>
+  </div>
+ </div>
+ <div class="flex-container">
+  <ha-select naturalMenuWidth fixedMenuPosition label="Name selection priority" .value=${String(this._config.namepriority)} @change=${(e) => this._valueChanged(e, 'namepriority',true)} @closed=${(ev) => ev.stopPropagation()}>
+   <ha-list-item .value=${'0'}>Device name</ha-list-item>
+   <ha-list-item .value=${'1'}>Entity name</ha-list-item>
+  </ha-select>
+  <ha-icon-picker label="Default entity icon" .value=${this._config.defaulticon} @value-changed=${(e)=>{this._valueChanged(e, 'defaulticon')} }></ha-icon-picker>
+ </div>
+ <div class="flex-container">
+  <ha-textfield label="Bar background color" .value="${this._config?.colors?.bar_bg||''}"  @change="${(e) => this._valueChanged(e, 'colors.bar_bg')}"></ha-textfield>
+  <ha-textfield label="Bar color" .value="${this._config?.colors?.bar||''}"  @change="${(e) => this._valueChanged(e, 'colors.bar')}"></ha-textfield>
+ </div>
+ <div class="flex-container">
+  <ha-textfield label="Chart background color" .value="${this._config?.colors?.chart_bg||''}"  @change="${(e) => this._valueChanged(e, 'colors.chart_bg')}"></ha-textfield>
+  <ha-textfield label="Chart color" .value="${this._config?.colors?.chart||''}"  @change="${(e) => this._valueChanged(e, 'colors.chart')}"></ha-textfield>
+ </div>
+ <div class="flex-container">
+  <ha-textfield label="Chart and bar frame color" .value="${this._config?.colors?.frame||''}"  @change="${(e) => this._valueChanged(e, 'colors.frame')}"></ha-textfield>
+  <ha-textfield label="The color of the entity name and data" .value="${this._config?.colors?.fontcolor||''}"  @change="${(e) => this._valueChanged(e, 'colors.fontcolor')}"></ha-textfield>
+ </div>
+ ${this.OpenEntityIndex==null?this._buildEntitysList():this._buildEntityBlock()}
+</div>`;
+   }
+ }
+
+customElements.define("tdv-bar-card-editor", TDVBarCardEditor);
+
+//#################################################################################################
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "tdv-bar-card",
   name: "TDV Bar",
-  preview: true, // Optional - defaults to false
-  description: "Bar chart oriented to display power sensors", // Optional
+  preview: true,
+  description: "Bar chart oriented to display power sensors",
   documentationURL: "https://github.com/tdvtdv/ha-tdv-bar"
 });

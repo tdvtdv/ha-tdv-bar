@@ -30,8 +30,8 @@ HACS is a third party community store and is not included in Home Assistant out 
 | ------------------ | ------- | ------------ | ------------------- | ------------------------------------------- |
 | type               | string  | **Required** |                     | `custom:tdv-bar-card`
 | title              | string  | **Optional** |                     | Optional header title for the card
-| height             | number  | **Optional** |                     | The height of the card in pixels
-| rangemax           | number  | **Optional** | 2000                | Maximum bar scale range
+| namepriority       | number  | **Optional** | 0                   | If no object name is specified, the device name or state name will be selected<br>0-Device<br>1-state
+| rangemax           | number  | **Optional** | 2000                | Maximum range for all entities (if no individual setting is available)
 | histmode           | number  | **Optional** | 1                   | Historical chart display mode<br>0-hide<br>1-show (this can be automatically overridden if the width of the widget is insufficient)
 | animation          | number  | **Optional** | 1                   | Bar chart animation<br>0-disable<br>1-enable
 | allownegativescale | number  | **Optional** | 0                   | Show and allow the use of negative scale<br>0-disable<br>1-enable
@@ -63,6 +63,7 @@ HACS is a third party community store and is not included in Home Assistant out 
 | name              | string  | **Optional** | Custom label for this entity
 | state             | string  | **Optional** | Change state entity id (e.g. switch)
 | barcolor          | string  | **Optional** | Individual bar color
+| rangemax          | number  | **Optional** | Maximum bar scale range
 
 
 ![Video example](img/vid.gif)
@@ -76,23 +77,22 @@ title: Energy consumers
 scaletype: log10
 rangemax: 2500
 histmode: 1
-trackingmode: 4
+trackingmode: 3
 trackingvalue: max
 allownegativescale: 0
+animation: 1
 entities:
   - entity: sensor.energomonitor_power
+    barcolor: "#008000"
     icon: mdi:power-standby
     name: Total consumption
-    barcolor: '#008000'
-  - entity: sensor.speaker_power
-    icon: mdi:speaker
-    name: Speaker
-    state: switch.dinamiki_na_kukhne
   - entity: sensor.energomonitor_fridge_power
     icon: mdi:fridge
     name: Fridge
   - entity: sensor.iot_power
-    icon: mdi:alert-octagram-outline
-    name: IOT
-    state: switch.iot
+    state: switch.iot_power
+    icon: mdi:zigbee
+    name: IOT devices
+  - entity: sensor.ups_power
+    state: switch.ups
 ```
