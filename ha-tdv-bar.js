@@ -4,6 +4,7 @@ const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace")
 const html = LitElement.prototype.html;
 const css = LitElement.prototype.css;
 
+
 class TDVBarCard extends LitElement//HTMLElement
  {
   static LocStr=
