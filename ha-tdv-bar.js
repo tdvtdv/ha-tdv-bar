@@ -1,4 +1,4 @@
-console.info("%c TDV-BAR-CARD %c v2.0.1 ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c TDV-BAR-CARD %c v2.0.2 ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace"));
 const html = LitElement.prototype.html;
@@ -93,7 +93,7 @@ class TDVBarCard extends LitElement//HTMLElement
       bar_bg:    this.config?.colors?.bar_bg||"var(--card-background-color)",
       bar:       this.config?.colors?.bar||"var(--mdc-theme-primary)",
       frame:     this.config?.colors?.frame||"var(--divider-color)",
-      fontcolor: this.config?.colors?.fontcolor||"var(--text-primary-color)",
+      fontcolor: this.config?.colors?.fontcolor||"var(--primary-text-color)",
       iconoff:   "var(--mdc-theme-text-icon-on-background)",
       iconon:    "var(--mdc-theme-secondary)",
       tracker:   "var(--mdc-theme-primary)", //--state-device_tracker-active-color
