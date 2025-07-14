@@ -4,7 +4,6 @@ const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace")
 const html = LitElement.prototype.html;
 const css = LitElement.prototype.css;
 
-
 class TDVBarCard extends LitElement//HTMLElement
  {
   static LocStr=
@@ -17,12 +16,14 @@ class TDVBarCard extends LitElement//HTMLElement
   constructor()
    {
     super();
+    this._timerId=null;
     this._Runtime=null;
     this._Entities=[];
     this._IsInited=false;
     this._broadcast=new BroadcastChannel("tdv-barv2");
     this._msecperday=86400000;        // msec per day
     this._scale=this._msecperday/144;
+    this._timerId=null;
    }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   static get styles()
@@ -77,6 +78,8 @@ class TDVBarCard extends LitElement//HTMLElement
   // The user supplied configuration. Throw an exception and Home Assistant will render an error card.
   setConfig(config)
    {
+    if(this._Runtime!=null) return; //Prevent multiple call setConfig
+
     if(!config.entities) throw new Error("You need to define an entity");
     this.config=config;
     this._scaletype=String((this.config.scaletype)??"log10").toLowerCase();
@@ -112,7 +115,7 @@ class TDVBarCard extends LitElement//HTMLElement
      {
       this._Entities[i]=
        {
-        entity:    e.entity,
+        entity:    e.entity?e.entity.trim():null,
         icon:      e.icon||this._defaulticon,
         name:      e.name||null, 
         meas:      "",
@@ -182,7 +185,6 @@ class TDVBarCard extends LitElement//HTMLElement
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   firstUpdated()
    {
-
     //Convert a css color variable to a regular web format color (for canvas use only)
     let compStyle=getComputedStyle(document.getElementsByTagName('body')[0]);
     for(let c in this._color)
@@ -246,8 +248,7 @@ class TDVBarCard extends LitElement//HTMLElement
 
         this._drawChartContext(i);
        }
-
-      }); 
+     }); 
 
     let hass=document.querySelector('home-assistant')?.hass;
     if(hass) this.hass=hass;
@@ -636,6 +637,7 @@ class TDVBarCard extends LitElement//HTMLElement
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   static async _reqHistEntityData(This,baridx,hass)
    {
+    if(This._Runtime==null||This._Entities.length!=This._Runtime.length) return; //Let's break this strange chain of calls if there are anomalies.
     if(baridx==0)
      {
       let curdate=new Date();
@@ -717,7 +719,7 @@ class TDVBarCard extends LitElement//HTMLElement
      {
       this._Entities.forEach((e,i)=>
        {
-        if(e.entity&&hass.entities[e.entity])
+        if(e.entity&&e.entity in hass.entities)
          {
           this._Runtime[i].base.classList.remove('error');
           let val=this._Runtime[i].value=Number(hass.states[e.entity].state);
@@ -748,7 +750,6 @@ class TDVBarCard extends LitElement//HTMLElement
           if(this._Entities[i].state&&hass.states[this._Entities[i].state]) ison=(hass.states[this._Entities[i].state].state=="on");
           else ison=(val!=0);//if on/off entity state is not defined the use base state
           this._Runtime[i].icon.setAttribute("style",`color:${ison?this._color.iconon:this._color.iconoff}`);
-
          }
         else
          {
