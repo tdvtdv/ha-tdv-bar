@@ -1,4 +1,4 @@
-console.info("%c TDV-BAR-CARD %c v2.0.2 ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c TDV-BAR-CARD %c v2.0.4b ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace"));
 const html = LitElement.prototype.html;
@@ -78,6 +78,8 @@ class TDVBarCard extends LitElement//HTMLElement
   // The user supplied configuration. Throw an exception and Home Assistant will render an error card.
   setConfig(config)
    {
+console.log("TDV-BAR-CARD","+setConfig");
+
     if(this._Runtime!=null) return; //Prevent multiple call setConfig
 
     if(!config.entities) throw new Error("You need to define an entity");
@@ -125,10 +127,11 @@ class TDVBarCard extends LitElement//HTMLElement
         rangemax:  Number(e.rangemax||this._rangemax),
        }
      });
+console.log("TDV-BAR-CARD","-setConfig Item count:",this._Entities.length);
    }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   render()
-   {//background-color: ${this._color.chart_bg}                                        style="dispaly:none;"
+   {
     return html`<ha-card header="${this.config.title}"><table class="card-content ${this.config.title?'removetopmargin':''}">${this._Entities.map((e,i)=> html`
      <tbody id="item${i}" data-idx="${i}" @click=${this._pressItem} style="color: ${this._color.fontcolor}">
       <tr>
@@ -185,6 +188,7 @@ class TDVBarCard extends LitElement//HTMLElement
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   firstUpdated()
    {
+console.log("TDV-BAR-CARD","+firstUpdated");
     //Convert a css color variable to a regular web format color (for canvas use only)
     let compStyle=getComputedStyle(document.getElementsByTagName('body')[0]);
     for(let c in this._color)
@@ -252,6 +256,7 @@ class TDVBarCard extends LitElement//HTMLElement
 
     let hass=document.querySelector('home-assistant')?.hass;
     if(hass) this.hass=hass;
+console.log("TDV-BAR-CARD","-firstUpdated");
    }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   _rgbval(color)
@@ -683,6 +688,8 @@ class TDVBarCard extends LitElement//HTMLElement
    {
     if(!this._IsInited&&hass)
      {
+console.log("TDV-BAR-CARD","set hass - init");
+
       if(!TDVBarCard.LocStr._isinited)
        {
         TDVBarCard.LocStr.loading=hass.localize("ui.common.loading")||TDVBarCard.LocStr.loading;
@@ -755,6 +762,9 @@ class TDVBarCard extends LitElement//HTMLElement
          {
           this._Runtime[i].base.classList.add('error');
           this._Runtime[i].measure.textContent=`Error`;
+
+console.log("TDV-BAR-CARD","Entities len:",this._Entities.length,"Entity:",e.entity,"Index",i,"Obj:",hass.states[e.entity]);
+
          }
        });
 //      this._hassForPreview=null;
