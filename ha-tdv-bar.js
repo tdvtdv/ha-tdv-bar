@@ -1,4 +1,4 @@
-console.info("%c TDV-BAR-CARD %c v2.0.5", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c TDV-BAR-CARD %c v2.0.6b", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace"));
 const html = LitElement.prototype.html;
@@ -727,7 +727,7 @@ class TDVBarCard extends LitElement//HTMLElement
      {
       this._Entities.forEach((e,i)=>
        {
-        if(e.entity&&e.entity in hass.entities)
+        if(e.entity&&e.entity in hass.states)
          {
           this._Runtime[i].base.classList.remove('error');
           let val=this._Runtime[i].value=Number(hass.states[e.entity].state);
