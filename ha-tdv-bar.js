@@ -1,4 +1,4 @@
-console.info("%c TDV-BAR-CARD %c v2.0.4b ", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c TDV-BAR-CARD %c v2.0.5", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace"));
 const html = LitElement.prototype.html;
@@ -78,41 +78,56 @@ class TDVBarCard extends LitElement//HTMLElement
   // The user supplied configuration. Throw an exception and Home Assistant will render an error card.
   setConfig(config)
    {
-console.log("TDV-BAR-CARD","+setConfig");
+//console.log("TDV-BAR-CARD","+setConfig");
 
     if(this._Runtime!=null) return; //Prevent multiple call setConfig
 
     if(!config.entities) throw new Error("You need to define an entity");
-    this.config=config;
-    this._scaletype=String((this.config.scaletype)??"log10").toLowerCase();
-    this._allownegativescale=parseInt(this.config.allownegativescale??"0");
-    this._histmode=parseInt(this.config.histmode??"1");
-    this._defaulticon=(this.config.defaulticon)??"mdi:power";
-    this._rangemax=Number(this.config.rangemax??2000);
-    this._animation=parseInt(this.config.animation??"1");
-    this._trackingmode=parseInt(this.config.trackingmode??"1");
+
+    this._title=config?.title??null
+
+    this._scaletype=String((config?.scaletype)??"log10").toLowerCase();
+    this._allownegativescale=parseInt(config?.allownegativescale??"0");
+    this._histmode=parseInt(config?.histmode??"1");
+    this._defaulticon=(config?.defaulticon)??"mdi:power";
+    this._rangemax=Number(config?.rangemax??2000);
+    this._animation=parseInt(config?.animation??"1");
+    this._trackingmode=parseInt(config?.trackingmode??"1");
+    this._namepriority=parseInt(config?.namepriority??"0");   //0-device name   1-entity name 2-friendly name
 
     this._color=
      {
-      chart_bg:  this.config?.colors?.chart_bg||"var(--card-background-color)",
-      chart_fg:  this.config?.colors?.chart||"var(--mdc-theme-secondary)",
-      bar_bg:    this.config?.colors?.bar_bg||"var(--card-background-color)",
-      bar:       this.config?.colors?.bar||"var(--mdc-theme-primary)",
-      frame:     this.config?.colors?.frame||"var(--divider-color)",
-      fontcolor: this.config?.colors?.fontcolor||"var(--primary-text-color)",
+      chart_bg:  config?.colors?.chart_bg||"var(--card-background-color)",
+      chart_fg:  config?.colors?.chart||"var(--mdc-theme-secondary)",
+      bar_bg:    config?.colors?.bar_bg||"var(--card-background-color)",
+      bar:       config?.colors?.bar||"var(--mdc-theme-primary)",
+      frame:     config?.colors?.frame||"var(--divider-color)",
+      fontcolor: config?.colors?.fontcolor||"var(--primary-text-color)",
       iconoff:   "var(--mdc-theme-text-icon-on-background)",
       iconon:    "var(--mdc-theme-secondary)",
       tracker:   "var(--mdc-theme-primary)", //--state-device_tracker-active-color
       chart_fghalf: 0,
      }
     this._colorctx={}
+    //Convert a css color variable to a regular web format color (for canvas use only)
+    let compStyle=getComputedStyle(document.getElementsByTagName('body')[0]);
+    for(let c in this._color)
+     {
+      if(this._color[c]&&this._color[c].trim().startsWith("var("))
+       { 
+        const match = this._color[c].match(/var\((.*?)\)/);
+        if(match) this._colorctx[c]=compStyle.getPropertyValue(match[1]);
+       }
+      else this._colorctx[c]=this._color[c];
+     }
 
+    let hsl=this._rgbval(this._colorctx.chart_fg);
+    this._color.chart_fghalf=this._colorctx.chart_fghalf=`rgba(${hsl[0]},${hsl[1]},${hsl[2]},.5)`;
 
-    this._namepriority=parseInt(this.config.namepriority??"0");   //0-device name   1-entity name 2-friendly name
 
     // Prepare entities 
     let a;
-    if(Array.isArray(this.config.entities)) a=this.config.entities; else a=[this.config.entities];
+    if(Array.isArray(config?.entities)) a=config?.entities; else a=[config?.entities];
     a.forEach((e,i)=>
      {
       this._Entities[i]=
@@ -127,12 +142,12 @@ console.log("TDV-BAR-CARD","+setConfig");
         rangemax:  Number(e.rangemax||this._rangemax),
        }
      });
-console.log("TDV-BAR-CARD","-setConfig Item count:",this._Entities.length);
+//console.log("TDV-BAR-CARD","-setConfig Item count:",this._Entities.length);
    }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   render()
    {
-    return html`<ha-card header="${this.config.title}"><table class="card-content ${this.config.title?'removetopmargin':''}">${this._Entities.map((e,i)=> html`
+    return html`<ha-card header="${this._title}"><table class="card-content ${this.title?'removetopmargin':''}">${this._Entities.map((e,i)=> html`
      <tbody id="item${i}" data-idx="${i}" @click=${this._pressItem} style="color: ${this._color.fontcolor}">
       <tr>
        <td rowspan="2" class="iconplace" data-idx="${i}" @click=${this._pressIcon}><ha-icon icon="${e.icon}" style="cursor:pointer;"></td>
@@ -188,22 +203,7 @@ console.log("TDV-BAR-CARD","-setConfig Item count:",this._Entities.length);
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   firstUpdated()
    {
-console.log("TDV-BAR-CARD","+firstUpdated");
-    //Convert a css color variable to a regular web format color (for canvas use only)
-    let compStyle=getComputedStyle(document.getElementsByTagName('body')[0]);
-    for(let c in this._color)
-     {
-      if(this._color[c]&&this._color[c].trim().startsWith("var("))
-       { 
-        const match = this._color[c].match(/var\((.*?)\)/);
-        if(match) this._colorctx[c]=compStyle.getPropertyValue(match[1]);
-       }
-      else this._colorctx[c]=this._color[c];
-     }
-
-    let hsl=this._rgbval(this._colorctx.chart_fg);
-    this._color.chart_fghalf=this._colorctx.chart_fghalf=`rgba(${hsl[0]},${hsl[1]},${hsl[2]},.5)`;
-
+//console.log("TDV-BAR-CARD","+firstUpdated");
     // Preparation of runtime data
     this._Runtime=[]; //this._Entities   this.config.entities
     this._Entities.forEach((e,i)=>
@@ -256,7 +256,7 @@ console.log("TDV-BAR-CARD","+firstUpdated");
 
     let hass=document.querySelector('home-assistant')?.hass;
     if(hass) this.hass=hass;
-console.log("TDV-BAR-CARD","-firstUpdated");
+//console.log("TDV-BAR-CARD","-firstUpdated");
    }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   _rgbval(color)
@@ -688,7 +688,7 @@ console.log("TDV-BAR-CARD","-firstUpdated");
    {
     if(!this._IsInited&&hass)
      {
-console.log("TDV-BAR-CARD","set hass - init");
+//console.log("TDV-BAR-CARD","set hass - init");
 
       if(!TDVBarCard.LocStr._isinited)
        {
@@ -696,6 +696,7 @@ console.log("TDV-BAR-CARD","set hass - init");
         TDVBarCard.LocStr.nodata=hass.localize("ui.components.data-table.no-data")||TDVBarCard.LocStr.nodata;
         TDVBarCard.LocStr._isinited=true;
        }
+
       this._Entities.forEach((e,i)=>
        {
         if(e.entity&&hass.entities[e.entity])
@@ -763,7 +764,7 @@ console.log("TDV-BAR-CARD","set hass - init");
           this._Runtime[i].base.classList.add('error');
           this._Runtime[i].measure.textContent=`Error`;
 
-console.log("TDV-BAR-CARD","Entities len:",this._Entities.length,"Entity:",e.entity,"Index",i,"Obj:",hass.states[e.entity]);
+//console.log("TDV-BAR-CARD","Entities len:",this._Entities.length,"Entity:",e.entity,"Index",i,"Obj:",hass.states[e.entity]);
 
          }
        });
@@ -781,7 +782,7 @@ console.log("TDV-BAR-CARD","Entities len:",this._Entities.length,"Entity:",e.ent
   // The rules for sizing your card in the grid in sections view
   getGridOptions()
    {
-    return {rows:this._Entities.length??5, columns:12, min_rows:1, max_rows:30};
+    return {rows:this._Entities.length||2, columns:12, min_rows:2, max_rows:30};
    }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   static getStubConfig()
@@ -839,14 +840,18 @@ class TDVBarCardEditor extends LitElement
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   setConfig(config)
    {
-    this._config=config;
+    this._config=structuredClone(config); 
     if(!this._config.entities) this._config.entities=[];
 
+    this._config.scaletype=String((config?.scaletype)??"log10").toLowerCase();
     this._config.allownegativescale=parseInt(config?.allownegativescale??"0");
     this._config.histmode=parseInt(config?.histmode??"1");
+    this._config.defaulticon=(config?.defaulticon)??"mdi:power";
+    this._config.rangemax=Number(config?.rangemax??2000);
     this._config.animation=parseInt(config?.animation??"1");
     this._config.trackingmode=parseInt(config?.trackingmode??"1");
     this._config.trackingvalue=config?.trackingvalue??"max";
+    this._config.namepriority=parseInt(config.namepriority??"0");   //0-device name   1-entity name 2-friendly name
 
     this.requestUpdate();
    }
