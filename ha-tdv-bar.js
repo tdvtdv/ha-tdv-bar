@@ -1,4 +1,4 @@
-console.info("%c TDV-BAR-CARD %c v2.0.6b", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
+console.info("%c TDV-BAR-CARD %c v2.0.7", "color: #000000; background:#ffa600 ; font-weight: 700;", "color: #000000; background: #03a9f4; font-weight: 700;");
 
 const LitElement = Object.getPrototypeOf(customElements.get("ha-panel-lovelace"));
 const html = LitElement.prototype.html;
@@ -24,6 +24,8 @@ class TDVBarCard extends LitElement//HTMLElement
     this._msecperday=86400000;        // msec per day
     this._scale=this._msecperday/144;
     this._timerId=null;
+    this._locLang=navigator.language;
+    this._locTimeFormat="language";
    }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   static get styles()
@@ -292,6 +294,21 @@ class TDVBarCard extends LitElement//HTMLElement
     return [r,g,b];
    }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  _formatTimeStr(date)
+   {
+    let loc;
+    const options = { hour: 'numeric', minute: 'numeric'};
+    switch(this._locTimeFormat)
+     {
+      case "language": loc=this._locLang;break;
+      case "system":   loc=navigator.language;break;
+      case "12":       loc=this._locLang;options.hour12=true;break;
+      case "24":       loc=this._locLang;options.hour12=false;break;
+     }
+
+    return new Intl.DateTimeFormat(loc, options).format(date);
+   }
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // itemidx valid only for local card
   _applayTrackData(data,itemidx)
    {
@@ -337,7 +354,8 @@ class TDVBarCard extends LitElement//HTMLElement
              {
 
               let d=new Date(Date.now()-(144-(data.pos))*this._scale);
-              let s="≈"+d.toLocaleTimeString([],{hour: '2-digit', minute:'2-digit'})+" "; //   (146-(this._tracker.hist_offset+1))*this._scale;
+              let s="≈"+this._formatTimeStr(d);
+              //d.toLocaleTimeString([],{hour: '2-digit', minute:'2-digit'})+" "; //   (146-(this._tracker.hist_offset+1))*this._scale;
               this._Runtime[i].tooltip.textContent=s;      
 
               this._Runtime[i].title.style.display="none";
@@ -696,6 +714,9 @@ class TDVBarCard extends LitElement//HTMLElement
         TDVBarCard.LocStr.nodata=hass.localize("ui.components.data-table.no-data")||TDVBarCard.LocStr.nodata;
         TDVBarCard.LocStr._isinited=true;
        }
+
+      this._locLang=hass.locale.language;
+      this._locTimeFormat=hass.locale.time_format;
 
       this._Entities.forEach((e,i)=>
        {
